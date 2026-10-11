@@ -302,6 +302,30 @@ function discoverAccounts() {
     });
   }
 
+  // [本地补丁] 桌面端 auth 快照在 5.6.2+ 是加密信封，解密需要构建期密钥
+  // （wb-field-key.json，未随仓库分发）。本机取不到该密钥时，退用 CodeBuddy IDE
+  // 的登录态——它同样属于本机、可经 DPAPI 解密，且与桌面端是同一账号同一 SSO。
+  // 仅当 auth 目录里没有该账号的可用快照时才补位，不影响原有行为。
+  try {
+    const ide = readIdeLogin();
+    if (ide && ide.uid && ide.accessToken) {
+      const ideKey = ide.uid + '|' + IDE_APP;
+      if (!byKey.has(ideKey)) {
+        byKey.set(ideKey, {
+          _mtime: 0,                 // 优先级最低：不覆盖 auth 目录里的同账号快照
+          _app: IDE_APP,
+          uid: ide.uid,
+          name: ide.name || String(ide.uid).slice(0, 8),
+          accessToken: ide.accessToken,
+          refreshToken: ide.refreshToken || '',
+          domain: ide.domain || '',
+          expiresAt: ide.expiresAt || 0,
+          source: ide.source || 'state.vscdb',
+        });
+      }
+    }
+  } catch { /* IDE 不可用则维持原行为 */ }
+
   // 按 uid 聚合：主快照取 mtime 最新的；apps 汇总该账号在各 app 的登录信息
   const byUid = new Map();
   for (const acc of byKey.values()) {
@@ -1290,6 +1314,12 @@ function decodeIdeLogin(dbFile, localStateFile) {
         name: atPath(j, ['account', 'nickname']) || String(uid).slice(0, 8),
         expiresAt: num(atPath(j, ['auth', 'expiresAt'])) || 0,
         source: 'state.vscdb',
+        // [本地补丁] 解密结果里本来就含完整凭证。桌面端快照若因缺少
+        // wb-field-key.json 解不开信封，就退用这份 IDE 凭证拉官方数据
+        // （同一账号、同一 SSO，第三方域实测同样通过鉴权）。
+        accessToken: atPath(j, ['auth', 'accessToken']) || '',
+        refreshToken: atPath(j, ['auth', 'refreshToken']) || '',
+        domain: atPath(j, ['auth', 'domain']) || '',
       };
     }
   } catch {

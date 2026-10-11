@@ -34,6 +34,16 @@ require('./config-doctor').runConfigDoctor();
 const ROOT = __dirname;
 const DEFAULT_PORT = 8099;
 const PORT_SCAN_LIMIT = 10;
+
+/**
+ * 监听地址。默认 0.0.0.0 —— 服务同时托管看板页面与数据文件，局域网内
+ * 任何设备访问 http://<本机IP>:<端口>/ 即可看到看板（网站化部署）。
+ * 需要退回「仅本机可访问」时启动时加 `--host 127.0.0.1`。
+ */
+const HOST = (() => {
+  const i = process.argv.indexOf('--host');
+  return (i !== -1 && process.argv[i + 1]) ? process.argv[i + 1] : '0.0.0.0';
+})();
 /** 单次同步的最长等待时间（默认只拉近 7 天账单，给足余量）。 */
 const SYNC_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -129,6 +139,17 @@ function applyCors(res) {
 
 // ---------------------------------------------------------------- 静态文件
 
+/**
+ * 静态文件白名单。监听 0.0.0.0 后局域网可达，必须挡住配置与凭证类文件——
+ * sync-config.json（Supabase key）、sync-state.json、auto-config.json、
+ * wb-field-key.json、auth/*.info 等一律不给，只放行看板本体与数据产物。
+ */
+const STATIC_ALLOW_EXT = new Set([
+  '.html', '.htm', '.css', '.js', '.mjs', '.csv', '.md', '.txt',
+  '.png', '.jpg', '.jpeg', '.svg', '.ico', '.woff', '.woff2', '.ttf',
+]);
+const STATIC_DENY_EXT = new Set(['.json', '.info', '.db', '.sql', '.log', '.exe', '.bat', '.key', '.pem']);
+
 function serveStatic(req, res) {
   let rel = decodeURIComponent(req.url.split('?')[0]);
   if (rel === '/') rel = '/workbuddy-token.html';
@@ -137,6 +158,19 @@ function serveStatic(req, res) {
   const file = path.resolve(ROOT, '.' + rel);
   if (!file.startsWith(ROOT)) {
     res.writeHead(403).end('forbidden');
+    return;
+  }
+
+  // 白名单校验：隐藏文件/隐藏目录（.git、.env 等）、配置与凭证类扩展名一律不服务。
+  const base = path.basename(file);
+  const ext = path.extname(file).toLowerCase();
+  const segs = path.relative(ROOT, file).split(path.sep);
+  const blocked = base.startsWith('.')
+    || segs.some((s) => s.startsWith('.'))
+    || STATIC_DENY_EXT.has(ext)
+    || !STATIC_ALLOW_EXT.has(ext);
+  if (blocked) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }).end('not found: ' + rel);
     return;
   }
 
@@ -1027,6 +1061,25 @@ function openBrowser(target) {
   exec(cmd, () => { /* 打不开也不影响服务本身 */ });
 }
 
+/**
+ * 列出可访问的网址。监听 0.0.0.0 时把所有非回环 IPv4 网卡都列出来，
+ * 方便直接复制到其它设备打开。
+ */
+function localUrls(port) {
+  const out = [];
+  if (HOST === '0.0.0.0' || HOST === '::' || HOST === '') {
+    out.push('http://127.0.0.1:' + port);
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const ni of list || []) {
+        if (ni.family === 'IPv4' && !ni.internal) out.push('http://' + ni.address + ':' + port);
+      }
+    }
+  } else {
+    out.push('http://' + HOST + ':' + port);
+  }
+  return out;
+}
+
 /** 从默认端口起依次尝试，避免端口被占用时直接失败。 */
 function listen(port, remaining) {
   // 重试前必须清掉上一轮的监听器：listen() 的回调是 once('listening')，
@@ -1035,16 +1088,20 @@ function listen(port, remaining) {
   server.removeAllListeners('error');
 
   server.once('listening', () => {
+    const urls = localUrls(port);
     console.log('');
-    console.log('  buddyToken 本地服务已启动');
-    console.log('  接口：http://127.0.0.1:' + port + '/api/…');
+    console.log('  buddyToken 网站已启动（监听 ' + HOST + ':' + port + '）');
     console.log('');
+    for (const u of urls) console.log('  看板：' + u + '/');
+    console.log('  接口：' + urls[0] + '/api/…');
+    console.log('');
+    console.log('  看板页面与数据（token-usage-data.js）都由本服务提供，');
+    console.log('  局域网内任一设备打开上面任一网址即可查看，无需额外拷贝文件。');
     console.log('  看板里的「💰 同步积分」「🔄 同步 Token」会真正去拉数据。');
-    console.log('  看板固定用 file:// 打开（与双击 HTML 是同一个地址），快照只存一份，');
-    console.log('  请勿再用 http://127.0.0.1:' + port + ' 打开它，否则快照会分成两份。');
-    console.log('  关闭本窗口即停止服务（看板照常能看，只是同步按钮会提示服务未启动）。');
+    console.log('  提示：http:// 与 file:// 的浏览器快照互不相通，请固定用一个入口。');
+    console.log('  关闭本窗口即停止服务（页面仍可查看，只是同步按钮会提示服务未启动）。');
     console.log('');
-    if (!process.argv.includes('--no-open')) openBrowser(BOARD_FILE);
+    if (!process.argv.includes('--no-open')) openBrowser(urls[0] + '/');
   });
 
   server.once('error', (err) => {
@@ -1057,7 +1114,7 @@ function listen(port, remaining) {
     }
   });
 
-  server.listen(port, '127.0.0.1');
+  server.listen(port, HOST);
 }
 
 listen(DEFAULT_PORT, PORT_SCAN_LIMIT);
