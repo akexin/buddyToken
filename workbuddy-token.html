@@ -544,6 +544,133 @@ table.cal td.cal-cell.has:hover{
 .sec-title{padding:14px 12px 6px;font-size:12px;font-weight:700;color:var(--muted);
   letter-spacing:.4px;text-transform:uppercase}
 
+/* ---------- 手机 / 窄屏适配 ----------
+   断点说明：
+     ≤760px  平板竖屏、小屏笔记本：收紧内边距与字号、图表降高、明细栏竖排、
+             表格转横向滚动（9～11 列的表在 340px 宽的卡片里折行会糊成一团）
+     ≤430px  手机：KPI 两列化、顶栏压到一行、触控目标加大
+   注意：顶栏与浮动筛选条的纵向偏移由 JS 按 topbar 实际高度算（--filters-top），
+   顶栏换行变高时会自动跟随，这里只负责把它压矮。 */
+@media(max-width:760px){
+  /* iOS 横屏会按容器宽度放大字号，这页数据密度高，禁用掉 */
+  body{-webkit-text-size-adjust:100%}
+
+  /* 页面留白收紧，并给 iPhone 刘海 / 手势条让位 */
+  .wrap{padding:0 max(12px,env(safe-area-inset-left))
+                calc(40px + env(safe-area-inset-bottom))
+                max(12px,env(safe-area-inset-right))}
+
+  /* ---------- 顶栏：尽量压成一行 ---------- */
+  .topbar-in{padding:9px max(12px,env(safe-area-inset-left)) 9px max(12px,env(safe-area-inset-right));gap:7px}
+  .brand{font-size:15px;gap:6px;min-width:0}
+  .brand small{font-size:11px;max-width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .btn{padding:6px 10px;font-size:12px;border-radius:8px}
+  .gh-link{width:30px;height:30px}
+  /* 同步状态条文案很长（「官方账单已同步 · 本次新增 N 条 · 累计 N 条 · N 个账号」），
+     手机上会独占一整行、把 sticky 顶栏撑到三行高。截断成一行挤回品牌名旁边，
+     状态仍由前面的小圆点颜色表达（灰/黄脉动=同步中，绿=已同步）。 */
+  .save-dot{font-size:11px;padding:3px 8px;max-width:98px}
+  .save-dot span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .menu{min-width:170px}
+  /* 顶栏变矮，锚点落点跟着上移，否则跳转后标题会被遮住 */
+  #dash .card,#dash .kpis,#dash .grid{scroll-margin-top:64px}
+
+  /* ---------- KPI ---------- */
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+  .kpi{padding:12px 13px;border-radius:12px}
+  .kpi-label{font-size:11.5px}
+  .kpi-value{font-size:21px}
+  .kpi-value.small{font-size:16px}
+  .kpi-sub{font-size:11.5px}
+
+  /* ---------- 网格 / 卡片 ---------- */
+  .grid{gap:12px;margin-bottom:12px}
+  .card{padding:13px 13px 11px;border-radius:12px}
+  .card h3{font-size:13.5px;margin-bottom:10px}
+  .chart-box{height:200px}
+  .chart-box.tall{height:230px}
+
+  /* ---------- 筛选条：chip 加大到手指点得准 ---------- */
+  .filters{padding:10px 12px;margin:12px 0;gap:10px 14px;border-radius:12px}
+  .fgroup{gap:5px}
+  .fgroup>label{flex:0 0 42px;font-size:11.5px}
+  .chip{padding:6px 12px;font-size:12.5px}
+  .pin-toggle{width:32px;height:32px}
+  input[type=date]{padding:7px 9px}
+
+  /* ---------- 表格：数字不折行，容器横向滚动兜底 ---------- */
+  .tbl{font-size:12.5px}
+  .tbl th{padding:7px 8px}
+  .tbl td{padding:7px 8px}
+  .tbl th,.tbl td.num{white-space:nowrap}
+  .tbl-scroll{-webkit-overflow-scrolling:touch}
+  /* 列多的表（明细 9 列 / Top 高消耗 8 列 / 回合 7 列 / 客户端 5 列）
+     整体不折行，靠容器横滑看全，比把 36 位 RequestID 折成两行可读 */
+  #tblDetail,#tblTop,#tblTokTop,#tblClient{white-space:nowrap}
+  /* 模型数据表带内嵌走势：单元格允许回绕，但走势上方的数字保持整行 */
+  #tblRank th,#tblRank td{white-space:nowrap}
+  #tblRank .cellwrap{white-space:normal}
+  /* 展开的回合步骤是子表，同样横滑，别把外层卡片撑破 */
+  .steps{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .heat td.mname{max-width:92px}
+  .heat td.cell{width:28px}
+
+  /* ---------- 日历热力图：400px 最小列宽在手机上会溢出，改单列 ---------- */
+  .cal-grid{grid-template-columns:1fr;gap:18px}
+
+  /* ---------- 完整明细：搜索框与按钮竖排铺满 ---------- */
+  .detail-bar{flex-direction:column;align-items:stretch;gap:8px}
+  .detail-bar .spacer{display:none}   /* 横向撑开用的，竖排后会变成一个撑高的大空块 */
+  .detail-q{min-width:0;width:100%;font-size:16px}  /* 16px 是 iOS 不自动放大的下限 */
+  input[type=date]{font-size:16px}
+  .detail-pager{justify-content:space-between}
+
+  /* ---------- 账号卡片 ---------- */
+  .acct-head{gap:6px}
+  .acct-remain{font-size:21px}
+  .acct-ops{flex-wrap:wrap}
+  .acct-btn{flex:1 1 42%}
+  /* 签到条最多 31 格，9px×31 + 间距会溢出 340px 的卡片 */
+  .ck-strip{gap:1px}
+  .ck-cell{width:7px;height:7px}
+  .ck-meta{white-space:normal}
+  .ck-spend{margin-left:0;gap:10px}
+
+  /* ---------- 弹窗 / 历史快照 ---------- */
+  .modal{padding:10px}
+  .modal-box{border-radius:14px;max-height:88vh}
+  .modal-head{padding:13px 15px;font-size:14px}
+  .modal-body{padding:6px 8px 12px}
+  .snap{gap:10px;padding:11px 8px}
+  .snap .ico{width:32px;height:32px;font-size:15px}
+  .snap .ops{width:100%;justify-content:flex-end}   /* 按钮挤不下就整行落到下面 */
+  .snap .ops button{padding:5px 12px}
+  .sec-title{padding:12px 8px 4px}
+
+  /* ---------- 上传区 ---------- */
+  .uploader{padding:40px 4px}
+  .drop{padding:38px 18px;border-radius:14px}
+  .drop .ico{font-size:36px}
+  .drop h2{font-size:17px}
+
+  /* ---------- 报告 / 说明文字 ---------- */
+  .report{font-size:13px}
+  .rank-note{font-size:11.5px;padding:9px 11px}
+  .banner,.merge-info{padding:10px 12px;font-size:12.5px;gap:8px}
+}
+
+@media(max-width:430px){
+  .brand{font-size:14px}
+  .brand small{max-width:76px}
+  .btn{padding:6px 9px}
+  .kpis{grid-template-columns:repeat(auto-fit,minmax(132px,1fr))}
+  .kpi-value{font-size:19px}
+  .kpi-value.small{font-size:15px}
+  .chart-box{height:180px}
+  .chart-box.tall{height:210px}
+  .heat td.mname{max-width:76px}
+}
+
 /* ---------- 打印 ---------- */
 @media print{
   body{background:#fff}
@@ -780,7 +907,7 @@ table.cal td.cal-cell.has:hover{
 
       <div class="card c5" id="clientTblCard">
         <h3><span class="dot"></span>客户端明细</h3>
-        <table class="tbl" id="tblClient"></table>
+        <div class="tbl-scroll"><table class="tbl" id="tblClient"></table></div>
       </div>
 
       <div class="card c7" id="dayCard">
