@@ -61,3 +61,8 @@ keystore.properties
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# 上面第 2 行的 token-usage-data.js 是按文件名匹配的（不带路径），会把 APK 里的
+# 空数据占位文件一并挡住，导致打包后 assets 里缺这个文件。这里显式放行——放行的
+# 只是各表为空的占位，仓库根的真实数据文件依旧不入库。
+!android/app/src/main/assets/token-usage-data.js
