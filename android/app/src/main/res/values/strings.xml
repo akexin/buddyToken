@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">buddyToken 看板</string>
+
+    <string name="menu_server">服务器地址</string>
+    <string name="menu_reload">重新加载</string>
+    <string name="menu_clear">清除本地缓存</string>
+
+    <string name="hint_server">http://192.168.1.10:8099</string>
+    <string name="msg_server">填电脑上运行 buddyToken 服务时打印的局域网地址（形如 http://192.168.1.10:8099），手机需与电脑在同一网络。</string>
+    <string name="save_reload">保存并重载</string>
+    <string name="cancel">取消</string>
+
+    <string name="msg_clear">将清空应用内的本地存储，包含离线数据缓存与筛选条件。下次打开会重新从服务器拉取，不影响电脑上的数据。</string>
+    <string name="do_clear">清空</string>
+    <string name="cleared">已清空</string>
+</resources>

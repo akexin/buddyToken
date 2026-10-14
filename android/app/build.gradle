@@ -1,0 +1,69 @@
+plugins {
+    id 'com.android.application'
+}
+
+// 看板本体（workbuddy-token.html）只在仓库根维护一份，构建时拷进 assets，
+// 不在 android/ 下再存一个副本——否则两边会漂移。
+def repoRoot = rootProject.projectDir.parentFile
+
+android {
+    namespace 'cn.akexin.buddytoken'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "cn.akexin.buddytoken"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    // 签名参数全部来自环境变量：CI 里由工作流从 Secrets 解码后注入，
+    // 本地构建时不设这些变量就自动跳过，退化成 debug 签名。
+    signingConfigs {
+        release {
+            def ksPath = System.getenv("KEYSTORE_PATH")
+            if (ksPath) {
+                storeFile file(ksPath)
+                storeType "PKCS12"
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KEY_ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+            if (System.getenv("KEYSTORE_PATH")) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // 生成的看板资源目录（见 copyDashboard）
+    sourceSets.main.assets.srcDirs += layout.buildDirectory.dir('generated/dashboard').get().asFile
+}
+
+// 把仓库根的看板拷成 assets/index.html
+tasks.register('copyDashboard', Copy) {
+    from(repoRoot) {
+        include 'workbuddy-token.html'
+        rename { 'index.html' }
+    }
+    into(layout.buildDirectory.dir('generated/dashboard'))
+}
+
+// 资产合并前必须先拷好；按名字匹配，避免依赖 AGP 内部的任务名写死。
+tasks.configureEach { t ->
+    if (t.name.startsWith('merge') && t.name.endsWith('Assets')) {
+        t.dependsOn('copyDashboard')
+    }
+}

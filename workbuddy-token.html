@@ -3832,9 +3832,16 @@ function buildFullDetail(rows){
  *
  * 用 <script> 注入而非 fetch：file:// 下 fetch 同目录文件会被 CORS 拦，
  * script 标签则可以加载。
+ *
+ * 取值顺序（Android 壳 / 普通浏览器都走这套）：
+ *   1. 连得上本地服务 → 从服务端取最新数据，顺手写一份到 localStorage；
+ *   2. 服务不可用 → 用 localStorage 里上次的副本渲染（离线可看）；
+ *   3. 都没有 → 退回同目录相对路径（PC 上双击 HTML 的老行为）。
  * =======================================================*/
 const TokenData = (() => {
   let _data = null;
+  // 服务端数据文件的本地副本：手机上没有文件系统，靠它实现「离线看上次数据」
+  const CACHE_KEY = 'buddy-token:data-cache';
 
   function inject(src){
     return new Promise(resolve => {
@@ -3849,14 +3856,57 @@ const TokenData = (() => {
     });
   }
 
+  /** 内联注入：把已经拿到手的源码直接执行，省一次请求，也便于先缓存再渲染。 */
+  function injectText(text){
+    const old = $('tokJs');
+    if(old) old.remove();
+    const s = document.createElement('script');
+    s.id = 'tokJs';
+    s.textContent = text;
+    document.head.appendChild(s);
+    return !!window.__TOKEN_DATA__;
+  }
+
+  async function fetchText(url){
+    try{
+      const r = await fetch(url, { cache: 'no-store' });
+      if(!r.ok) return null;
+      const t = await r.text();
+      return t && t.length ? t : null;
+    }catch(e){ return null; }
+  }
+
+  const cachePut = text => { try{ localStorage.setItem(CACHE_KEY, text); }catch(e){ console.warn('[TokenData] 缓存写入失败', e); } };
+  const cacheGet = () => { try{ return localStorage.getItem(CACHE_KEY); }catch(e){ return null; } };
+
   async function load(){
     // 先清旧引用：文件被删掉时，残留的全局变量会让人误以为已同步
     _data = null;
     window.__TOKEN_DATA__ = null;
 
-    // 先带时间戳绕缓存；万一环境不支持 query，再退化为裸路径重试
-    if(!await inject('token-usage-data.js?v=' + Date.now()))
-      await inject('token-usage-data.js');
+    // 1) 本地服务在线：取最新数据，并留下副本
+    let base = null;
+    try{ base = await ServerSync.base(); }catch(e){ base = null; }
+    if(base){
+      const text = await fetchText(base + '/token-usage-data.js?t=' + Date.now());
+      if(text && injectText(text)) cachePut(text);
+    }
+
+    // 2) 离线：用上次缓存渲染（首次使用尚无缓存时跳过）
+    if(!window.__TOKEN_DATA__){
+      const cached = cacheGet();
+      if(cached){
+        injectText(cached);
+        if(window.__TOKEN_DATA__) console.info('[TokenData] 离线模式：使用本地缓存的数据');
+      }
+    }
+
+    // 3) 兜底：同目录相对路径（PC 上双击 HTML 时走这里）
+    if(!window.__TOKEN_DATA__){
+      // 先带时间戳绕缓存；万一环境不支持 query，再退化为裸路径重试
+      if(!await inject('token-usage-data.js?v=' + Date.now()))
+        await inject('token-usage-data.js');
+    }
 
     const d = window.__TOKEN_DATA__;
     _data = (d && d.t && typeof d.t === 'object') ? d : null;
@@ -4088,11 +4138,29 @@ const ServerSync = (() => {
   let _status = null;
 
   /**
+   * Android 壳（WebView APK）注入的服务地址。
+   *
+   * 手机上页面装在应用内（file:///android_asset/），127.0.0.1 指的是手机自己，
+   * 端口探测永远找不到电脑上的服务，所以由壳把用户填的地址透传进来。普通浏览器
+   * 里没有这个桥，返回值恒为空，一切照旧。
+   */
+  function nativeBase(){
+    try{
+      const b = (window.AndroidBridge && typeof AndroidBridge.getServerBase === 'function')
+        ? AndroidBridge.getServerBase() : '';
+      return b && String(b).trim() ? String(b).trim().replace(/\/+$/, '') : '';
+    }catch(e){ return ''; }
+  }
+
+  /**
    * 找到本地服务地址。
    * 探测成功时顺手把 /api/status 的结果存下来，省掉一次往返。
    */
   async function base(){
     if(_base !== undefined) return _base;
+
+    const nb = nativeBase();           // APK 里优先用应用内配置的地址
+    if(nb){ _base = nb; return _base; }
 
     if(location.protocol === 'http:' || location.protocol === 'https:'){
       _base = location.origin;          // 同源，直接用

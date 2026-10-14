@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 看板服务跑在电脑上、走的是明文 http + 局域网 IP，所以这里放行明文流量。
+     应用本身不访问公网，风险仅限于本地网络。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

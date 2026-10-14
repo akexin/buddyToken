@@ -39,6 +39,24 @@ _timematch.py
 # 浏览器调试工具产物
 .playwright-cli/
 
+# Android 构建产物与本地配置
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/captures/
+.cxx/
+
+# 签名密钥：只放 Secrets 与本地保管，绝不入库
+*.keystore
+*.jks
+*.p12
+keystore.properties
+
+# 打包产物
+*.apk
+*.aab
+
 # 系统文件
 Thumbs.db
 desktop.ini
