@@ -2,9 +2,14 @@
 <resources>
     <string name="app_name">buddyToken 看板</string>
 
-    <string name="menu_server">服务器地址</string>
+    <string name="menu_discover">自动发现服务器</string>
+    <string name="menu_server">手动填写服务器地址</string>
     <string name="menu_reload">重新加载</string>
     <string name="menu_clear">清除本地缓存</string>
+
+    <string name="discovering">正在局域网中搜索 buddyToken 服务…</string>
+    <string name="discovered">已找到并连接：%1$s</string>
+    <string name="discover_failed">没搜到 buddyToken 服务。请确认电脑上的服务已启动、手机与电脑连的是同一个 Wi-Fi，然后重试或手动填写地址。</string>
 
     <string name="hint_server">http://192.168.1.10:8099</string>
     <string name="msg_server">填电脑上运行 buddyToken 服务时打印的局域网地址（形如 http://192.168.1.10:8099），手机需与电脑在同一网络。</string>

@@ -8,6 +8,8 @@ on:
       - 'android/**'
       - '.github/workflows/android.yml'
       - 'workbuddy-token.html'
+    # 推 v* 标签即构建并自动发 Release（路径过滤对标签不生效，见 GitHub 文档）。
+    tags: [ 'v*' ]
   pull_request:
     paths:
       - 'android/**'
@@ -15,8 +17,9 @@ on:
       - 'workbuddy-token.html'
   workflow_dispatch:
 
+# 发 Release 需要写权限；fork 来的 PR 会被自动降为只读，无额外风险。
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -98,3 +101,35 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # 仅在推 v* 标签时走下面两步：把 APK 改个带版本号的名字并挂到 Release，
+      # 手机浏览器点开链接即可下载，不必登录 GitHub 去找 artifact。
+      - name: 整理发布文件
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/*.apk "dist/buddyToken-${GITHUB_REF_NAME}.apk"
+          ls -l dist
+
+      - name: 发布到 GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/buddyToken-*.apk
+          name: buddyToken 看板 ${{ github.ref_name }}
+          body: |
+            WorkBuddy / CodeBuddy 的积分账单 × Token 消耗看板，Android 安装包（已签名）。
+
+            ## 安装
+            下载下面的 APK，在手机上点击安装（首次需允许「安装未知来源应用」）。
+
+            ## 首次打开
+            1. 电脑上启动服务：`node server.js`（会打印局域网地址，并开启 UDP 自动发现）。
+            2. 手机与电脑连同一个 Wi-Fi，打开 App —— 它会自动搜索并连上服务，**通常无需手填 IP**。
+            3. 搜不到时：确认服务在跑、手机与电脑同网段，点右上角菜单「自动发现服务器」重试，或「手动填写服务器地址」。
+
+            ## 说明
+            - 数据不在安装包里：打开时从电脑上的服务拉取，并缓存在手机本地，断网仍可看上次结果。
+            - 升级请直接覆盖安装（同包名 + 同签名，无需卸载）。
+          draft: false
+          prerelease: false

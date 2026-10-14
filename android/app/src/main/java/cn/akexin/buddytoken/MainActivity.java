@@ -19,6 +19,18 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.InterfaceAddress;
+import java.net.NetworkInterface;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * buddyToken 看板的 Android 外壳。
  *
@@ -28,6 +40,9 @@ import android.widget.Toast;
  *
  * 与页面之间只有一座极小的桥：页面问「服务器地址填的多少」，这里答一个字符串。
  * 桥方法无任何副作用，页面上跑的远端脚本也拿它做不了别的事。
+ *
+ * 服务器地址默认不必手填：打开时向局域网广播一个探针，电脑上的服务（server.js
+ * 的 UDP 发现）会回一句自己的地址，据此自动连上；找不到才退回手输框。
  */
 public class MainActivity extends Activity {
 
@@ -35,9 +50,15 @@ public class MainActivity extends Activity {
     private static final String KEY_SERVER = "serverBase";
     private static final String KEY_ASKED = "serverAsked";
 
-    /** 首次运行填的默认值，只是省一次输入——用户随时可在菜单里改。 */
+    /** 兜底地址：自动发现失败、用户又不想手填时的最后选择。 */
     private static final String DEFAULT_SERVER = "http://172.16.0.76:8099";
 
+    /** 与 server.js 的 DISCOVER_PORT / DISCOVER_MAGIC 必须一致。 */
+    private static final int DISCOVER_PORT = 8098;
+    private static final String DISCOVER_MAGIC = "BUDDYTOKEN/DISCOVER";
+    private static final int DISCOVER_TIMEOUT_MS = 2500;
+
+    private static final int MENU_DISCOVER = 0;
     private static final int MENU_SERVER = 1;
     private static final int MENU_RELOAD = 2;
     private static final int MENU_CLEAR  = 3;
@@ -79,10 +100,10 @@ public class MainActivity extends Activity {
 
         web.loadUrl("file:///android_asset/index.html");
 
-        // 首次启动先把服务器地址摆出来：没配对的话页面只能是空的
+        // 首次启动先自己找一遍服务器，找不到再弹手填框：没配对的话页面只能是空的
         if (!prefs.getBoolean(KEY_ASKED, false)) {
             prefs.edit().putBoolean(KEY_ASKED, true).apply();
-            editServer();
+            autoDiscover(true);
         }
     }
 
@@ -96,19 +117,118 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
-        menu.add(0, MENU_SERVER, 0, R.string.menu_server);
-        menu.add(0, MENU_RELOAD, 1, R.string.menu_reload);
-        menu.add(0, MENU_CLEAR, 2, R.string.menu_clear);
+        menu.add(0, MENU_DISCOVER, 0, R.string.menu_discover);
+        menu.add(0, MENU_SERVER, 1, R.string.menu_server);
+        menu.add(0, MENU_RELOAD, 2, R.string.menu_reload);
+        menu.add(0, MENU_CLEAR, 3, R.string.menu_clear);
         return true;
     }
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
+        if (id == MENU_DISCOVER) { autoDiscover(false); return true; }
         if (id == MENU_SERVER) { editServer(); return true; }
         if (id == MENU_RELOAD) { web.reload(); return true; }
         if (id == MENU_CLEAR) { confirmClear(); return true; }
         return super.onOptionsItemSelected(item);
+    }
+
+    /**
+     * 在局域网里找 buddyToken 服务：广播一个探针，等服务回包。
+     *
+     * 找到就写入并重载；找不到时，首次启动会顺势弹出手填框，用户主动点击的
+     * 情况（fallbackToManual=false）只提示失败——不硬塞一个输入框打断操作。
+     */
+    private void autoDiscover(boolean fallbackToManual) {
+        Toast.makeText(this, R.string.discovering, Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            final String base = probeServer(DISCOVER_TIMEOUT_MS);
+            runOnUiThread(() -> {
+                if (base != null) {
+                    prefs.edit().putString(KEY_SERVER, base).apply();
+                    Toast.makeText(this, getString(R.string.discovered, base), Toast.LENGTH_LONG).show();
+                    web.reload();
+                } else {
+                    Toast.makeText(this, R.string.discover_failed, Toast.LENGTH_LONG).show();
+                    if (fallbackToManual) editServer();
+                }
+            });
+        }, "buddyToken-discover").start();
+    }
+
+    /** 广播探针并等待应答；拿到服务器地址返回它，超时或出错返回 null。 */
+    private String probeServer(int timeoutMs) {
+        DatagramSocket sock = null;
+        try {
+            sock = new DatagramSocket();
+            sock.setBroadcast(true);
+            sock.setSoTimeout(timeoutMs);
+
+            byte[] probe = DISCOVER_MAGIC.getBytes(StandardCharsets.UTF_8);
+            for (InetAddress target : broadcastTargets()) {
+                try {
+                    sock.send(new DatagramPacket(probe, probe.length, target, DISCOVER_PORT));
+                } catch (IOException ignored) {
+                    // 某个网卡发不出去（如未连上）不影响其它网卡
+                }
+            }
+
+            long deadline = System.currentTimeMillis() + timeoutMs;
+            byte[] buf = new byte[512];
+            while (System.currentTimeMillis() < deadline) {
+                DatagramPacket resp = new DatagramPacket(buf, buf.length);
+                try {
+                    sock.receive(resp);
+                } catch (SocketTimeoutException te) {
+                    break;
+                }
+                String base = parseBase(new String(resp.getData(), 0, resp.getLength(), StandardCharsets.UTF_8));
+                if (base != null) return base;
+            }
+        } catch (Exception e) {
+            // 网络不可用等一律当作「没找到」，由上层决定是否回退手填
+        } finally {
+            if (sock != null) sock.close();
+        }
+        return null;
+    }
+
+    /**
+     * 广播目标：全局广播地址 + 各网卡的子网广播地址。
+     *
+     * 部分设备会过滤 255.255.255.255，多带一份子网广播（如 192.168.1.255）
+     * 能显著提高命中率。
+     */
+    private List<InetAddress> broadcastTargets() {
+        List<InetAddress> list = new ArrayList<>();
+        try {
+            list.add(InetAddress.getByName("255.255.255.255"));
+            for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                if (!ni.isUp() || ni.isLoopback()) continue;
+                for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                    InetAddress b = ia.getBroadcast();
+                    if (b != null) list.add(b);
+                }
+            }
+        } catch (Exception ignored) {
+            // 取不到网卡信息就只用全局广播
+        }
+        return list;
+    }
+
+    /** 从应答 JSON 里取 base 字段；格式由 server.js 固定，不做完整 JSON 解析。 */
+    private String parseBase(String json) {
+        int key = json.indexOf("\"base\"");
+        if (key < 0) return null;
+        int colon = json.indexOf(':', key);
+        if (colon < 0) return null;
+        int q1 = json.indexOf('"', colon + 1);
+        if (q1 < 0) return null;
+        int q2 = json.indexOf('"', q1 + 1);
+        if (q2 < 0) return null;
+        String v = json.substring(q1 + 1, q2).trim();
+        return v.isEmpty() ? null : v;
     }
 
     private void editServer() {

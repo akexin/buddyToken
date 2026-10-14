@@ -18,6 +18,7 @@
 'use strict';
 
 const http = require('http');
+const dgram = require('dgram');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -1080,6 +1081,64 @@ function localUrls(port) {
   return out;
 }
 
+/**
+ * 局域网自动发现（UDP）。
+ *
+ * 手机端的 APK 打开时并不知道电脑的 IP，手抄一遍既麻烦又容易错（换个网络就变）。
+ * 这里开一个单独的 UDP 端口：收到手机发来的探测包就回一行 JSON，附上本机在
+ * 「对方那侧」的访问地址，手机据此自动填好服务器地址。
+ *
+ * 只被动应答、从不主动广播，且必须收到约定的 magic 才回，避免被别的 UDP 扫描
+ * 误触发。端口与 HTTP 分开，省得和页面请求混在一起。
+ */
+const DISCOVER_PORT = 8098;
+const DISCOVER_MAGIC = 'BUDDYTOKEN/DISCOVER';
+
+/** 挑一个与探测方同网段的本地 IPv4；找不到同网段的就退回第一个非回环地址。 */
+function localIpFor(peer) {
+  const ips = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const ni of list || []) {
+      if (ni.family === 'IPv4' && !ni.internal) ips.push(ni.address);
+    }
+  }
+  if (!ips.length) return null;
+  const p = String(peer || '').split('.');
+  if (p.length === 4) {
+    const want = p.slice(0, 3).join('.') + '.';
+    const hit = ips.find((ip) => ip.startsWith(want));
+    if (hit) return hit;
+  }
+  return ips[0];
+}
+
+/**
+ * 启动发现服务。仅在监听 0.0.0.0（局域网可达）时启用——只绑回环时手机本就
+ * 连不上，回复一个 127.0.0.1 只会误导。返回 socket 供进程退出时关闭。
+ */
+function startDiscovery(httpPort) {
+  if (HOST !== '0.0.0.0' && HOST !== '::' && HOST !== '') return null;
+
+  const sock = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  sock.on('error', (err) => {
+    console.log('  提示：地址自动发现不可用（UDP ' + DISCOVER_PORT + '：' + err.message + '），不影响其它功能。');
+    try { sock.close(); } catch { /* 已经关了 */ }
+  });
+  sock.on('message', (msg, rinfo) => {
+    if (msg.toString('utf8').trim() !== DISCOVER_MAGIC) return;
+    const ip = localIpFor(rinfo.address);
+    if (!ip) return;
+    const reply = JSON.stringify({ service: 'buddyToken', proto: 1, base: 'http://' + ip + ':' + httpPort });
+    sock.send(Buffer.from(reply, 'utf8'), rinfo.port, rinfo.address);
+  });
+  try {
+    sock.bind(DISCOVER_PORT, '0.0.0.0');
+  } catch {
+    return null;
+  }
+  return sock;
+}
+
 /** 从默认端口起依次尝试，避免端口被占用时直接失败。 */
 function listen(port, remaining) {
   // 重试前必须清掉上一轮的监听器：listen() 的回调是 once('listening')，
@@ -1100,6 +1159,9 @@ function listen(port, remaining) {
     console.log('  看板里的「💰 同步积分」「🔄 同步 Token」会真正去拉数据。');
     console.log('  提示：http:// 与 file:// 的浏览器快照互不相通，请固定用一个入口。');
     console.log('  关闭本窗口即停止服务（页面仍可查看，只是同步按钮会提示服务未启动）。');
+    if (startDiscovery(port)) {
+      console.log('  手机端：装好 APK 后点菜单「自动发现服务器」即可连上，无需手填 IP。');
+    }
     console.log('');
     if (!process.argv.includes('--no-open')) openBrowser(urls[0] + '/');
   });
