@@ -33,13 +33,23 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: 安装 Android SDK 命令行工具
-        uses: android-actions/setup-android@v3
-
-      - name: 准备 SDK 组件
+      # 不用 android-actions/setup-android：它内部会跑 `sdkmanager tools`，
+      # 而 `tools` 包已从 SDK 仓库下架，会直接报 "Failed to find package 'tools'"。
+      # runner 镜像本就装好了 SDK，这里只用它的 sdkmanager 补装需要的组件。
+      - name: 准备 Android SDK 组件
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          echo "SDK 根目录：$SDK"
+          SDKM="$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort -V | tail -n1)"
+          if [ -z "$SDKM" ]; then
+            echo "::error::未找到 sdkmanager，SDK 目录结构：$(ls -R "$SDK" | head -40)"
+            exit 1
+          fi
+          echo "sdkmanager：$SDKM"
+          echo "$(dirname "$SDKM")" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: 安装 Gradle
         uses: gradle/actions/setup-gradle@v4
