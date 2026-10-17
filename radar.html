@@ -148,6 +148,43 @@ select:focus,input[type=search]:focus{border-color:var(--blue)}
 .calstats div{color:var(--muted);font-size:11.5px}
 .calstats b{display:block;color:var(--text);font-size:17px;font-weight:640;margin-top:2px;font-variant-numeric:tabular-nums}
 
+/* ---------- 余额续航 ---------- */
+.billtop{display:flex;gap:14px;align-items:flex-start;justify-content:space-between}
+.billtop > div{min-width:0}
+.billk{color:var(--muted);font-size:11.5px;letter-spacing:.4px}
+.billv{font-size:31px;font-weight:700;line-height:1.2;margin-top:2px;font-variant-numeric:tabular-nums;letter-spacing:.3px}
+.billv.cy{color:#5ee0f2}
+.billv.warn{color:var(--orange)}
+.billn{color:var(--muted);font-size:11px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.billbar{
+  height:7px;border-radius:999px;background:#162033;overflow:hidden;margin:13px 0 4px;
+  border:1px solid rgba(30,42,61,.9);
+}
+.billbar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--cyan),var(--blue))}
+.billbar i.exp{background:linear-gradient(90deg,var(--orange),var(--red))}
+.pkgs{margin-top:9px;display:flex;flex-direction:column;gap:6px}
+.pkg{
+  display:flex;align-items:center;gap:8px;font-size:11.5px;color:#b9c9e2;
+  padding:5px 8px;border-radius:8px;background:rgba(22,32,51,.55);border:1px solid rgba(30,42,61,.7);
+}
+.pkg .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9fb0c8}
+.pkg b{font-weight:600;color:#cfdcef;font-variant-numeric:tabular-nums}
+.pkg .ex{color:var(--muted);font-size:10.5px;white-space:nowrap}
+.pkg.soon{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.07)}
+.pkg.soon .ex{color:#fbbf5c}
+.billnote{color:var(--muted);font-size:10.5px;margin-top:9px;line-height:1.7}
+
+/* ---------- 代码 ROI ---------- */
+.codestats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.codestats div{background:rgba(22,32,51,.5);border:1px solid rgba(30,42,61,.8);border-radius:9px;padding:7px 9px}
+.codestats > div > span{display:block;color:var(--muted);font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.codestats b{display:block;font-size:17px;font-weight:660;margin-top:1px;font-variant-numeric:tabular-nums;color:#8ab4ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.codestats b .u{font-size:11px;color:var(--muted);font-weight:400;margin-left:2px;white-space:nowrap}
+.codestats .add b{color:#57e39a}
+.codestats .del b{color:#f58a8a}
+.fbar{display:inline-block;height:4px;border-radius:2px;background:linear-gradient(90deg,rgba(79,140,255,.85),rgba(34,211,238,.6));vertical-align:middle;opacity:.8}
+.cfile{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#cfdcef;margin-bottom:3px}
+
 /* ---------- 表格 ---------- */
 .tblwrap{overflow:auto;max-height:460px;border-radius:10px;border:1px solid var(--line)}
 table{border-collapse:collapse;width:100%;font-size:12.5px;white-space:nowrap}
@@ -205,13 +242,23 @@ td.num,th.num{text-align:right}
   .card{padding:13px 12px 8px;border-radius:14px}
   .chart{height:230px}
   .chart.tall{height:340px}
+  #heat{height:270px !important}
   .tblwrap{max-height:380px}
+  .billv{font-size:27px}
+  .codestats b{font-size:15px}
 }
 @media (max-width:430px){
   .kpi .v{font-size:18px}
   .kpi .k{font-size:10.5px}
   .cal{--c:13px}
   .chart{height:210px}
+  #heat{height:250px !important}
+  .billv{font-size:24px}
+  .codestats{gap:6px}
+  .codestats div{padding:6px 7px}
+  .codestats b{font-size:14px}
+  .cfile{max-width:132px}
+  #codeTbl th,#codeTbl td{padding:7px 6px}
 }
 </style>
 </head>
@@ -257,14 +304,29 @@ td.num,th.num{text-align:right}
       </div>
     </div>
 
+    <div class="card" id="billCard" style="display:none">
+      <h3><span class="bar"></span>余额与续航<span class="hint" id="billHint"></span></h3>
+      <div id="billing"></div>
+    </div>
+
     <div class="card">
       <h3><span class="bar"></span>时段分布<span class="hint">0–23 点</span></h3>
       <div class="chart" id="hour"></div>
     </div>
 
+    <div class="card span2">
+      <h3><span class="bar"></span>作息热力矩阵<span class="hint" id="heatHint">星期 × 时段 · 按积分</span></h3>
+      <div class="chart" id="heat" style="height:300px"></div>
+    </div>
+
     <div class="card">
       <h3><span class="bar"></span>场景构成<span class="hint">按积分</span></h3>
       <div class="chart" id="scene"></div>
+    </div>
+
+    <div class="card">
+      <h3><span class="bar"></span>耗时 × 积分<span class="hint">越大越贵越慢</span></h3>
+      <div class="chart" id="scatter"></div>
     </div>
 
     <div class="card span2">
@@ -273,13 +335,14 @@ td.num,th.num{text-align:right}
     </div>
 
     <div class="card">
-      <h3><span class="bar"></span>耗时 × 积分<span class="hint">越大越贵越慢</span></h3>
-      <div class="chart" id="scatter"></div>
-    </div>
-
-    <div class="card">
       <h3><span class="bar"></span>性价比榜<span class="hint">每 100 积分产出</span></h3>
       <div class="tblwrap" style="max-height:268px;border:0"><table id="roi"></table></div>
+    </div>
+
+    <div class="card" id="codeCard">
+      <h3><span class="bar"></span>代码产出 ROI<span class="hint" id="codeHint">每 100 积分换多少行</span></h3>
+      <div class="codestats" id="codeStats"></div>
+      <div class="tblwrap" style="max-height:186px;border:0"><table id="codeTbl"></table></div>
     </div>
 
     <div class="card span2">
@@ -490,6 +553,141 @@ td.num,th.num{text-align:right}
     }).join('');
   }
 
+  // ---------------------------------------------------------------- 余额与续航
+
+  function fmtDate(ts) {
+    var d = new Date(ts);
+    return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  /**
+   * 余额卡。
+   *
+   * 日均消耗固定取「全量数据近 7 天」而不是当前筛选结果：筛选器是用来钻取的，
+   * 若「还能用几天」跟着模型/场景跳来跳去，这个数字就失去意义了。
+   * 固定除以 7（而不是有数据的天数），停用两天时预估会如实变长。
+   */
+  /**
+   * 按「最早到期的先烧」推算还能撑多少天。
+   *
+   * 不能简单用 min(余额/日耗, 最近到期)。余额往往是多档套餐叠加的，
+   * 第一档到期只是作废其中一部分，剩下的还能继续用——直接取 min 会把
+   * 续航算短一大截（本例 16 天 vs 实际 30 天）。
+   */
+  function daysUntilExhausted(lots, rate) {
+    if (!(rate > 0)) return Infinity;
+    var q = 0;
+    for (var i = 0; i < lots.length; i++) q += lots[i].q;
+    if (q <= 0) return 0;
+
+    var sorted = lots.slice().sort(function (a, b) { return a.exp - b.exp; });
+    var t = 0;
+    for (var j = 0; j < sorted.length; j++) {
+      var lot = sorted[j];
+      if (!(lot.q > 0)) continue;
+      if (lot.exp === Infinity) return t + q / rate;
+
+      var dExp = (lot.exp - Date.now()) / 86400000;
+      if (dExp <= t) { q -= lot.q; continue; }   // 这一档在到达之前就已过期
+
+      var burn = rate * (dExp - t);
+      if (q <= burn) return t + q / rate;        // 在本次到期前就烧完了
+      // 撑到到期：先扣掉这段时间烧掉的，再扣掉这一档没烧完、当场作废的
+      var eaten = Math.min(lot.q, burn);
+      q = q - burn - (lot.q - eaten);
+      t = dExp;
+    }
+    return t;
+  }
+
+  function renderBilling() {
+    var list = (D.billing || []).filter(function (a) { return a.total || a.remaining; });
+    if (!list.length) return;
+
+    var from = Date.now() - 7 * 86400000, sum = 0;
+    for (var i = 0; i < ROWS.length; i++) if (ROWS[i].t >= from) sum += ROWS[i].c || 0;
+    var rate = sum / 7;
+
+    var remaining = 0, total = 0, used = 0, updated = 0, pkgs = [];
+    for (var j = 0; j < list.length; j++) {
+      var a = list[j];
+      remaining += a.remaining || 0;
+      total += a.total || 0;
+      used += a.used || 0;
+      if (a.updatedAt > updated) updated = a.updatedAt;
+      for (var k = 0; k < (a.packages || []).length; k++) {
+        var p = a.packages[k];
+        pkgs.push({
+          name: (list.length > 1 ? a.name + ' · ' : '') + p.name,
+          remaining: p.remaining || 0,
+          expireAt: p.expireAt || 0
+        });
+      }
+    }
+
+    // 套餐剩余之和可能小于账号剩余（有未归属的部分），那部分按不过期处理
+    var pkgSum = 0;
+    for (var m = 0; m < pkgs.length; m++) pkgSum += pkgs[m].remaining;
+    var lots = pkgs.map(function (p) { return { q: p.remaining, exp: p.expireAt || Infinity }; });
+    if (remaining > pkgSum) lots.push({ q: remaining - pkgSum, exp: Infinity });
+
+    var effDays = daysUntilExhausted(lots, rate);
+    var urgent = effDays < 7;
+
+    var daysText;
+    if (!isFinite(effDays)) daysText = '∞';
+    else if (effDays < 1) daysText = '不足 1 天';
+    else if (effDays > 365) daysText = '> 1 年';
+    else daysText = Math.max(0, Math.floor(effDays)) + '<span class="u" style="font-size:13px;font-weight:400;color:#8494ad"> 天</span>';
+
+    var pctUsed = total ? Math.min(100, used / total * 100) : 0;
+
+    pkgs.sort(function (x, y) { return (x.expireAt || Infinity) - (y.expireAt || Infinity); });
+    var pkgHtml = pkgs.slice(0, 3).map(function (p) {
+      var soon = p.expireAt && p.expireAt - Date.now() < 30 * 86400000;
+      return '<div class="pkg' + (soon ? ' soon' : '') + '">' +
+        '<span class="nm" title="' + esc(p.name) + '">' + esc(p.name) + '</span>' +
+        '<b>' + fmt(p.remaining) + '</b>' +
+        '<span class="ex">' + (p.expireAt ? fmtDate(p.expireAt) + ' 到期' : '长期') + '</span>' +
+        '</div>';
+    }).join('');
+
+    var notes = [];
+    if (rate > 0) notes.push('按近 7 天日均 ' + rate.toFixed(1) + ' 积分估算');
+    else notes.push('近 7 天没有消耗，暂时无法估算');
+
+    // 到期早于烧完，说明会有一部分积分作废——把作废的那档点出来
+    var nextExp = null;
+    for (var n = 0; n < lots.length; n++) {
+      var l = lots[n];
+      if (l.q <= 0 || !isFinite(l.exp)) continue;
+      if (!nextExp || l.exp < nextExp.exp) nextExp = l;
+    }
+    if (nextExp && isFinite(effDays) && nextExp.exp < Date.now() + effDays * 86400000) {
+      notes.push(fmt(nextExp.q) + ' 积分 ' + fmtDate(nextExp.exp) + ' 到期，未用完即作废');
+    }
+    if (updated) notes.push('余额快照 ' + fmtTime(updated) + ' 更新');
+
+    $('billCard').style.display = '';
+    $('billHint').textContent = list.length > 1 ? list.length + ' 个账号合计' : (list[0].name || '当前账号');
+    $('billing').innerHTML =
+      '<div class="billtop">' +
+        '<div>' +
+          '<div class="billk">剩余积分</div>' +
+          '<div class="billv' + (urgent ? ' warn' : '') + '">' + fmt(remaining) + '</div>' +
+          '<div class="billn">共 ' + fmt(total) + ' · 已用 ' + fmt(used) + '</div>' +
+        '</div>' +
+        '<div style="text-align:right">' +
+          '<div class="billk">预计可用</div>' +
+          '<div class="billv cy' + (urgent ? ' warn' : '') + '">' + daysText + '</div>' +
+          '<div class="billn">' + (rate > 0 ? '日均 ' + rate.toFixed(1) : '暂无消耗') + '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="billbar"><i class="' + (urgent ? 'exp' : '') + '" style="width:' + pctUsed.toFixed(1) + '%"></i></div>' +
+      '<div class="pkgs">' + pkgHtml + '</div>' +
+      '<div class="billnote">' + notes.join(' · ') + '</div>';
+  }
+
   // ---------------------------------------------------------------- 图表
 
   function ensureECharts() {
@@ -565,6 +763,89 @@ td.num,th.num{text-align:right}
         },
         { name: '请求', type: 'line', yAxisIndex: 1, data: count, smooth: true, symbol: 'none', lineStyle: { color: '#22d3ee', width: 1.6, opacity: .85 } }
       ]
+    }, true);
+  }
+
+  /**
+   * 星期 × 时段热力矩阵。
+   *
+   * 单看 24H 柱状图只能知道「几点在干活」，把星期这一维加上才看得出作息：
+   * 工作日午后才亮、周末整片偏暗，或者连续一周凌晨都在烧积分。
+   */
+  function renderHeat(rows) {
+    var DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    var credit = [], count = [];
+    for (var d = 0; d < 7; d++) {
+      credit.push(new Array(24).fill(0));
+      count.push(new Array(24).fill(0));
+    }
+    for (var i = 0; i < rows.length; i++) {
+      var dt = new Date(rows[i].t);
+      var w = (dt.getDay() + 6) % 7;   // 周一 = 0
+      var h = dt.getHours();
+      credit[w][h] += rows[i].c || 0;
+      count[w][h]++;
+    }
+
+    var data = [], max = 0, all = 0, late = 0, best = { v: -1, d: 0, h: 0 };
+    for (var y = 0; y < 7; y++) {
+      for (var x = 0; x < 24; x++) {
+        var v = Math.round(credit[y][x] * 100) / 100;
+        data.push([x, y, v, count[y][x]]);
+        all += v;
+        if (x < 6) late += v;
+        if (v > max) max = v;
+        if (v > best.v) { best = { v: v, d: y, h: x }; }
+      }
+    }
+
+    $('heatHint').textContent = all
+      ? '高峰 ' + DAYS[best.d] + ' ' + best.h + ' 时 · 凌晨 0–6 点占 ' + pct(late, all)
+      : '星期 × 时段 · 按积分';
+
+    var c = chart('heat');
+    c.setOption({
+      backgroundColor: 'transparent',
+      grid: { left: 46, right: 18, top: 10, bottom: 78 },
+      tooltip: Object.assign({
+        trigger: 'item',
+        formatter: function (p) {
+          var v = p.data;
+          return DAYS[v[1]] + ' ' + v[0] + ' 时<br/>' + v[2].toFixed(1) + ' 积分 · ' + v[3] + ' 次请求';
+        }
+      }, BASE_TEXT.tooltip),
+      xAxis: Object.assign({
+        type: 'category',
+        data: Array.from({ length: 24 }, function (_, i) { return i; }),
+        splitArea: { show: false }
+      }, axisCommon()),
+      yAxis: Object.assign({
+        type: 'category',
+        data: DAYS,
+        inverse: true,
+        splitArea: { show: false }
+      }, axisCommon()),
+      visualMap: {
+        min: 0,
+        max: max || 1,
+        calculable: false,
+        orient: 'horizontal',
+        left: 'center',
+        bottom: 10,
+        itemWidth: 10,
+        itemHeight: 90,
+        // horizontal 方向下 text[0] 落在右端，所以这里按「高、低」写，画出来才是 低 → 高
+        text: ['高', '低'],
+        textStyle: { color: '#8494ad', fontSize: 10 },
+        inRange: { color: ['#101b2b', '#173a5e', '#1f5f9e', '#2f86d6', '#57b6ff'] }
+      },
+      series: [{
+        type: 'heatmap',
+        data: data,
+        itemStyle: { borderColor: '#0d1420', borderWidth: 2, borderRadius: 3 },
+        emphasis: { itemStyle: { borderColor: '#9ecbff', borderWidth: 1 } },
+        progressive: 0
+      }]
     }, true);
   }
 
@@ -729,12 +1010,71 @@ td.num,th.num{text-align:right}
       '</tbody>';
   }
 
+  /**
+   * 代码产出 ROI。
+   *
+   * 行数从 trace 里 Edit / Write 的入参直接数：Write 记 content 行数为新增，
+   * Edit 记 new_string 为新增、old_string 为删除。统计口径是「写入量」而不是
+   * 文件最终行数——同一个文件被覆盖写多次会重复计，这正好反映真实的产出动作。
+   *
+   * 注意：行数只能跟着 trace 走，而 trace 只保留约 11 天，所以它天然只覆盖
+   * 近期请求；顶部数字随筛选器变，右下文件榜是 trace 全期的，两处分别标注。
+   */
+  function renderCodeROI(rows) {
+    var code = D.code && D.code.files ? D.code.files : [];
+    var add = 0, del = 0, n = 0, credit = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!r.al && !r.dl) continue;
+      n++;
+      add += r.al || 0;
+      del += r.dl || 0;
+      credit += r.c || 0;
+    }
+    if (!add && !del && !code.length) {
+      $('codeCard').style.display = 'none';
+      return;
+    }
+    $('codeCard').style.display = '';
+
+    var per100 = credit ? (add / credit * 100) : 0;
+    var net = add - del;
+
+    $('codeStats').innerHTML =
+      '<div><span>新增行</span><b class="add">+' + fmt(add) + '</b></div>' +
+      '<div><span>删除行</span><b class="del">-' + fmt(del) + '</b></div>' +
+      '<div><span>每 100 积分</span><b>' + (credit ? fmt(per100) : '-') + '<span class="u">行</span></b></div>';
+
+    var top = code.slice(0, 40);
+    var maxAdd = top.length ? top[0].add || 1 : 1;
+    $('codeTbl').innerHTML =
+      '<thead><tr><th>改动最多的文件</th><th class="num">+行</th><th class="num">-行</th><th class="num">次</th></tr></thead><tbody>' +
+      top.map(function (f) {
+        var w = Math.max(2, Math.min(100, (f.add || 0) / maxAdd * 100));
+        return '<tr>' +
+          '<td title="' + esc(f.file) + '">' +
+            '<div class="cfile">' + esc(f.file) + '</div>' +
+            '<div class="fbar" style="width:' + w.toFixed(0) + '%"></div>' +
+          '</td>' +
+          '<td class="num" style="color:#57e39a">' + (f.add || 0).toLocaleString() + '</td>' +
+          '<td class="num" style="color:#f58a8a">' + (f.del || 0).toLocaleString() + '</td>' +
+          '<td class="num">' + f.n + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+
+    // 净增行数只在控制台口径上有意义，页面放到 hint 里当补充
+    if (n) $('codeHint').textContent = n + ' 次请求有编辑动作 · 净增 ' + (net >= 0 ? '+' : '') + fmt(net) + ' 行';
+  }
+
   function renderTable(rows) {
     var list = rows.slice().sort(function (a, b) { return b.t - a.t; }).slice(0, 400);
     $('tblHint').textContent = '最近 ' + list.length + ' 条 / 共 ' + rows.length + ' 条';
     $('tbl').innerHTML =
-      '<thead><tr><th>时间</th><th>工作区</th><th>模型</th><th>场景</th><th class="num">耗时</th><th class="num">积分</th><th class="num">输入</th><th class="num">输出</th></tr></thead><tbody>' +
+      '<thead><tr><th>时间</th><th>工作区</th><th>模型</th><th>场景</th><th class="num">耗时</th><th class="num">积分</th><th class="num">输入</th><th class="num">输出</th><th class="num">代码</th></tr></thead><tbody>' +
       list.map(function (r) {
+        var code = (r.al || r.dl)
+          ? '<span style="color:#57e39a">+' + r.al + '</span><span style="color:#8494ad">/</span><span style="color:#f58a8a">-' + r.dl + '</span>'
+          : '<span style="color:#4a5a72">-</span>';
         return '<tr>' +
           '<td>' + fmtTime(r.t) + '</td>' +
           '<td title="' + esc(r.p) + '">' + esc(r.p.length > 22 ? r.p.slice(0, 21) + '…' : r.p) + '</td>' +
@@ -744,6 +1084,7 @@ td.num,th.num{text-align:right}
           '<td class="num">' + (r.c || 0).toFixed(2) + '</td>' +
           '<td class="num">' + fmtTok(r.i) + '</td>' +
           '<td class="num">' + fmtTok(r.o) + '</td>' +
+          '<td class="num">' + code + '</td>' +
           '</tr>';
       }).join('') + '</tbody>';
   }
@@ -754,13 +1095,16 @@ td.num,th.num{text-align:right}
     var rows = filtered();
     renderKPI(rows);
     renderCalendar(rows);
+    renderBilling();
     if (window.echarts) {
       renderHour(rows);
+      renderHeat(rows);
       renderScene(rows);
       renderSankey(rows);
       renderScatter(rows);
     }
     renderROI(rows);
+    renderCodeROI(rows);
     renderTable(rows);
   }
 
@@ -811,6 +1155,7 @@ td.num,th.num{text-align:right}
       return;
     }
     renderHour(filtered());
+    renderHeat(filtered());
     renderScene(filtered());
     renderSankey(filtered());
     renderScatter(filtered());
@@ -821,6 +1166,10 @@ td.num,th.num{text-align:right}
     '积分来自每次请求的 usage.credit，耗时为 trace 中 generation span 的时长。<br>' +
     '<b>口径说明</b>：' + (D.coverage ? ('共有 ' + D.coverage.durationRequests + ' 次请求能匹配到耗时（trace 仅保留约 11 天，更早的请求没有耗时）；') : '') +
     '「场景」按该轮实际调用过的工具归类（编辑文件=Coding、跑命令=Debug、检索=Research、子任务=Agent、无工具=Chat），不是猜 prompt 关键词。<br>' +
+    '<b>代码口径</b>：行数从 trace 中 Edit / Write / MultiEdit 的入参数出——Write 的 content 记为新增，Edit 的 new_string / old_string 分别记为新增与删除。' +
+    '统计的是「写入量」而非文件最终行数，同一文件被反复覆写会重复累计；trace 只覆盖约 11 天，故代码榜是近期产出。<br>' +
+    '<b>余额口径</b>：余额与套餐来自 <code>token-usage-data.js</code> 的账号快照（<code>node token-usage-report.js --emit-js --only=credits</code> 刷新），' +
+    '可用天数 = 剩余积分 ÷ 近 7 天日均消耗，并取「套餐到期」中更早的那个。<br>' +
     '<b>已知缺口</b>：官方账单接口与本机日志都不记录请求 IP，因此没有地理归属地；「工作区」是本次可用的位置替代维度。' +
     '数据由 <code>radar-collect.js</code> 于 ' + new Date(D.generatedAt).toLocaleString() + ' 生成。';
 })();

@@ -81,9 +81,48 @@ function shortProject(cwd) {
  * 每条 span 附带「紧跟在它之后、下一次生成之前」的工具调用集合：一轮里先
  * 生成、再调工具，所以这批工具才是这次生成真正引发的动作，用于场景归类。
  */
+/** 文本行数：忽略结尾换行，空串记 0。 */
+function lineCount(v) {
+  if (typeof v !== 'string' || !v) return 0;
+  const s = v.endsWith('\n') ? v.slice(0, -1) : v;
+  return s ? s.split('\n').length : 0;
+}
+
+/** 只留最后两段路径，页面认得出文件又不至于把整条盘符路径写进数据。 */
+function shortFile(p) {
+  const parts = String(p || '').replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts.slice(-2).join('/');
+}
+
+/**
+ * 从 Edit / Write / MultiEdit 的入参里数「新增 / 删除」行数。
+ *
+ * trace 里 toolInput 是 JSON 字符串：Write 有 content，Edit 有 old_string /
+ * new_string，MultiEdit 是 edits 数组。这三类正好能还原出改动量。
+ * 数的是「本次编辑写入的行」，不是文件最终行数——覆盖写同一文件会重复计。
+ */
+function diffLines(toolName, toolInput) {
+  if (!toolInput) return null;
+  let inp;
+  try { inp = JSON.parse(toolInput); } catch { return null; }
+  const file = shortFile(inp.file_path || inp.path || '');
+  if (toolName === 'Write') return { add: lineCount(inp.content), del: 0, file };
+  if (toolName === 'Edit') return { add: lineCount(inp.new_string), del: lineCount(inp.old_string), file };
+  if (toolName === 'MultiEdit') {
+    let add = 0, del = 0;
+    for (const e of (inp.edits || [])) {
+      add += lineCount(e.new_string);
+      del += lineCount(e.old_string);
+    }
+    return { add, del, file };
+  }
+  return null;
+}
+
 function buildSpanPool() {
   const files = listFiles(TRACE_DIR, '.json');
   const pool = [];
+  const codeFiles = new Map();   // 全局：文件 → { add, del, n }
   let bad = 0;
 
   for (const file of files) {
@@ -99,9 +138,19 @@ function buildSpanPool() {
         dur: Number(s.duration),
         type: s.type,
         tool: s.toolName || '',
+        lines: diffLines(s.toolName, s.toolInput),
       }))
       .filter((s) => Number.isFinite(s.st))
       .sort((a, b) => a.st - b.st);
+
+    // 全局文件产出（不区分哪一轮，用于「改动最多的文件」榜）
+    for (const s of all) {
+      if (!s.lines || !s.lines.file) continue;
+      const f = s.lines.file;
+      if (!codeFiles.has(f)) codeFiles.set(f, { add: 0, del: 0, n: 0 });
+      const o = codeFiles.get(f);
+      o.add += s.lines.add; o.del += s.lines.del; o.n++;
+    }
 
     const gens = all.filter((s) => s.type === 'generation');
     for (let i = 0; i < gens.length; i++) {
@@ -113,18 +162,22 @@ function buildSpanPool() {
       // 下一次生成开始之前的所有工具调用，就是这次生成的「动作」
       const nextStart = i + 1 < gens.length ? gens[i + 1].st : Infinity;
       const tools = {};
+      let add = 0, del = 0;
       for (const s of all) {
         if (!s.tool) continue;
-        if (s.st >= g.st && s.st < nextStart) tools[s.tool] = (tools[s.tool] || 0) + 1;
+        if (s.st >= g.st && s.st < nextStart) {
+          tools[s.tool] = (tools[s.tool] || 0) + 1;
+          if (s.lines) { add += s.lines.add; del += s.lines.del; }
+        }
       }
 
-      pool.push({ end, dur, tools });
+      pool.push({ end, dur, tools, add, del });
     }
   }
 
   pool.sort((a, b) => a.end - b.end);
-  log(`[trace] 文件 ${files.length} 个，generation span ${pool.length} 条（解析失败 ${bad}）`);
-  return pool;
+  log(`[trace] 文件 ${files.length} 个，generation span ${pool.length} 条，涉及 ${codeFiles.size} 个文件（解析失败 ${bad}）`);
+  return { pool, codeFiles };
 }
 
 // ---------------------------------------------------------------- 2. 会话心跳
@@ -260,6 +313,8 @@ async function collectRequests(spanPool, sessionIndex, titles) {
       d: null,
       x: r.x,
       s: '',
+      al: 0,   // 本轮新增行数（Edit/Write 的 new_string/content）
+      dl: 0,   // 本轮删除行数（Edit 的 old_string）
     });
   }
 
@@ -295,6 +350,8 @@ async function collectRequests(spanPool, sessionIndex, titles) {
     const sp = spanPool[c.si];
     rows[c.ri].d = Math.round(sp.dur);
     rows[c.ri].s = classifyScene(sp.tools, rows[c.ri].a);
+    rows[c.ri].al = sp.add || 0;
+    rows[c.ri].dl = sp.del || 0;
     durMatched++; matchedSpans++;
   }
 
@@ -322,20 +379,60 @@ function classifyScene(tools, agent) {
   return 'Chat';
 }
 
+/**
+ * 读现有看板产出的 token-usage-data.js，取账号余额与套餐。
+ *
+ * 不直接调官方接口：这个采集脚本是离线跑的，绑上「服务必须在跑」反而更脆。
+ * 余额是快照，页面会带上 updatedAt，让用户知道截至什么时候。
+ */
+function readBilling() {
+  const p = path.join(__dirname, 'token-usage-data.js');
+  if (!fs.existsSync(p)) return null;
+  try {
+    const src = fs.readFileSync(p, 'utf8');
+    const j = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+    const list = (j.acct || []).map((a) => ({
+      name: a.name || '',
+      uid: a.uid || '',
+      total: Number(a.total) || 0,
+      remaining: Number(a.remaining) || 0,
+      used: Number(a.used) || 0,
+      updatedAt: Number(a.updatedAt) || 0,
+      expireAt: Number(a.soonestExpireAt) || 0,
+      packages: (a.packages || []).map((x) => ({
+        name: x.name || '',
+        remaining: Number(x.remaining) || 0,
+        total: Number(x.total) || 0,
+        expireAt: Number(x.expireAt) || 0,
+      })),
+    }));
+    return list.length ? list : null;
+  } catch { return null; }
+}
+
 // ---------------------------------------------------------------- 主流程
 
 (async () => {
   log('积分全息轨迹 · 数据采集');
   log('');
 
-  const spanPool = buildSpanPool();
+  const { pool: spanPool, codeFiles } = buildSpanPool();
   const sessionIndex = buildSessionIndex();
   const titles = buildSessionTitles();
   const { rows, durMatched, matchedSpans, creditMissing } = await collectRequests(spanPool, sessionIndex, titles);
+  const billing = readBilling();
 
   // 时间窗过滤
   const cutoff = argDays ? Date.now() - argDays * 86400000 : 0;
   const kept = cutoff ? rows.filter((r) => r.t >= cutoff) : rows;
+
+  // 代码产出榜：按新增行数降序，只留前 200 个，避免数据文件被文件路径撑大
+  const code = {
+    files: [...codeFiles.entries()]
+      .map(([file, v]) => ({ file, add: v.add, del: v.del, n: v.n }))
+      .sort((a, b) => b.add - a.add || b.n - a.n)
+      .slice(0, 200),
+  };
 
   const payload = {
     generatedAt: new Date().toISOString(),
@@ -352,7 +449,10 @@ function classifyScene(tools, agent) {
       spanPool: spanPool.length,
       durationRequests: kept.filter((r) => r.d != null).length,
       creditMissing,
+      codeLines: kept.reduce((s, r) => s + (r.al || 0), 0),
     },
+    billing,   // 账号余额快照（可能为 null：还没同步过官方账单）
+    code,      // 代码产出（全量 trace，不随 --days 裁剪）
     rows: kept,
   };
 
@@ -366,5 +466,15 @@ function classifyScene(tools, agent) {
   log(`[耗时] ${payload.coverage.durationRequests}/${kept.length} 次有耗时（匹配率 ${(payload.coverage.durationRequests / Math.max(1, kept.length) * 100).toFixed(1)}%）`);
   log(`[耗时] 匹配 span ${matchedSpans}/${spanPool.length} 条（trace 只保留最近约 11 天）`);
   log(`[积分] 缺失 ${creditMissing} 条（按 0 计，占比 ${(creditMissing / Math.max(1, kept.length) * 100).toFixed(1)}%）`);
+  const codeAdd = kept.reduce((s, r) => s + (r.al || 0), 0);
+  const codeDel = kept.reduce((s, r) => s + (r.dl || 0), 0);
+  log(`[代码] +${codeAdd} / -${codeDel} 行，涉及 ${codeFiles.size} 个文件（仅 trace 覆盖期内，榜上保留前 ${code.files.length} 个）`);
+  if (billing) {
+    for (const a of billing) {
+      log(`[余额] ${a.name || a.uid}：剩余 ${a.remaining} / 共 ${a.total}，套餐到期 ${a.expireAt ? new Date(a.expireAt).toLocaleDateString() : '未知'}`);
+    }
+  } else {
+    log('[余额] 未读到 token-usage-data.js 的账号快照，页面将隐藏余额卡');
+  }
   log(`[用时] ${((Date.now() - t0) / 1000).toFixed(1)} 秒`);
 })();
