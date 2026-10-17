@@ -27,6 +27,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
+const { writeFileAtomic } = require('./atomic-write');
 
 const HOME = os.homedir();
 const PROJECT_DIRS = [
@@ -457,7 +458,7 @@ function readBilling() {
   };
 
   const head = '/* 由 radar-collect.js 自动生成，请勿手工编辑 */\n';
-  fs.writeFileSync(OUT_FILE, head + 'window.__RADAR_DATA__ = ' + JSON.stringify(payload) + ';\n', 'utf8');
+  writeFileAtomic(OUT_FILE, head + 'window.__RADAR_DATA__ = ' + JSON.stringify(payload) + ';\n');
 
   const size = fs.statSync(OUT_FILE).size;
   log('');

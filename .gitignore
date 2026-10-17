@@ -14,6 +14,12 @@ auto-config.json
 sync-config.json
 sync-state.json
 
+# 本地服务访问令牌（明文口令），切勿提交
+auth-token.txt
+
+# 原子写留下的临时文件（正常路径会自己清掉，进程被杀时可能残留）
+.*.tmp
+
 # 账号凭证与官方账单：含明文 accessToken/refreshToken、真实 requestId，切勿提交
 wb-accounts.json
 billing-data.js

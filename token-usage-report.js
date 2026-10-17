@@ -93,6 +93,7 @@ const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const { parseArgs } = require('util');
+const { writeFileAtomic } = require('./atomic-write');
 
 // console 输出同步落盘到 logs/buddytoken-YYYYMMDD.log（见 app-logger.js）
 require('./app-logger');
@@ -917,7 +918,7 @@ async function syncCreditsOnly({ outdir, jsOut, args, days, noMerge, uid, light 
     `本次新增 ${fmt(merged.meta.addedRows)} 条 + 历史保留 ${fmt(merged.meta.keptRows)} 条 ` +
     `= 账单 ${fmt(merged.bill.length)} 条 · 账号 ${merged.accounts.length} 个 · ` +
     `回合 ${fmt(data.meta.turns)} 个 */\n`;
-  fs.writeFileSync(jsPath, head + 'window.__TOKEN_DATA__=' + JSON.stringify(data) + ';\n', 'utf8');
+  writeFileAtomic(jsPath, head + 'window.__TOKEN_DATA__=' + JSON.stringify(data) + ';\n');
 
   console.log('');
   console.log(uid
@@ -1094,7 +1095,7 @@ async function main() {
     ].map(esc).join(','));
   }
   // \uFEFF = UTF-8 BOM，保证 Excel 双击打开中文不乱码
-  fs.writeFileSync(csvPath, '\uFEFF' + lines.join('\r\n') + '\r\n', 'utf8');
+  writeFileAtomic(csvPath, '\uFEFF' + lines.join('\r\n') + '\r\n');
 
   // ---------------------------------------------------------- 看板数据（积分关联用）
   let jsPath = null;
@@ -1196,7 +1197,7 @@ async function main() {
                  (kept ? ` + 历史保留 ${fmt(kept)} 个` : '') +
                  ` = ${fmt(data.meta.turns)} · 请求 ${fmt(data.meta.reqs)}` +
                  `${light ? ' · 已省略每步明细' : ''} */\n`;
-    fs.writeFileSync(jsPath, head + 'window.__TOKEN_DATA__=' + JSON.stringify(data) + ';\n', 'utf8');
+    writeFileAtomic(jsPath, head + 'window.__TOKEN_DATA__=' + JSON.stringify(data) + ';\n');
     if (kept) {
       console.log(`  （增量合并：保留了 ${fmt(kept)} 个本地已不存在、但历史上同步过的回合）`);
     }
@@ -1225,7 +1226,7 @@ async function main() {
   if (reqs.length === 0) {
     W('> 未发现任何带 usage 的请求记录。');
     const mdPath = path.join(outdir, 'token-usage-summary.md');
-    fs.writeFileSync(mdPath, L.join('\n'), 'utf8');
+    writeFileAtomic(mdPath, L.join('\n'));
     console.log(L.join('\n'));
     return;
   }
@@ -1459,7 +1460,7 @@ async function main() {
   W();
 
   const mdPath = path.join(outdir, 'token-usage-summary.md');
-  fs.writeFileSync(mdPath, L.join('\n'), 'utf8');
+  writeFileAtomic(mdPath, L.join('\n'));
 
   // ---------------------------------------------------------- 控制台简版
   const bar = '='.repeat(62);

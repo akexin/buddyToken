@@ -22,7 +22,9 @@ const dgram = require('dgram');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { exec, execFile } = require('child_process');
+const { writeFileAtomic } = require('./atomic-write');
 
 // console 输出同步落盘到 logs/buddytoken-YYYYMMDD.log（见 app-logger.js）。
 // 必须先于 config-doctor：体检输出也要进日志。
@@ -47,6 +49,50 @@ const HOST = (() => {
 })();
 /** 单次同步的最长等待时间（默认只拉近 7 天账单，给足余量）。 */
 const SYNC_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * 指定端口。默认从 8099 起自动往后找空位；`--port 8100` 时只试这一个，
+ * 被占用就直接报错——两个实例同时监听同一端口在 Windows 上不会报 EADDRINUSE
+ * （一个绑 0.0.0.0、另一个绑 127.0.0.1 是允许的），排查起来非常费劲。
+ */
+const PORT_ARG = (() => {
+  const i = process.argv.indexOf('--port');
+  if (i === -1) return 0;
+  const n = Number(process.argv[i + 1]);
+  return Number.isInteger(n) && n > 0 && n < 65536 ? n : 0;
+})();
+
+/**
+ * 可选的访问令牌。
+ *
+ * 服务默认监听 0.0.0.0，同网段任何设备都能调写接口（同步 / 签到 / 切换账号 /
+ * 一键清空），浏览器里的任意网页也能跨域 POST 过来。家里网络可以接受，连公共
+ * Wi-Fi 时就不合适。设了令牌后，所有 POST /api/* 必须带 X-Auth-Token；
+ * GET 只读接口不拦——页面首屏的 /api/status 探测不该被挡。
+ *
+ * 三种设置方式（优先级从高到低）：
+ *   node server.js --auth-token abc123
+ *   set BUDDYTOKEN_TOKEN=abc123 && node server.js
+ *   项目根目录放 auth-token.txt（一行，方便 .bat 启动时免参数）
+ * 不设则维持原行为（不校验），升级不会打断现有用法。
+ */
+const AUTH_TOKEN = (() => {
+  const i = process.argv.indexOf('--auth-token');
+  if (i !== -1 && process.argv[i + 1]) return String(process.argv[i + 1]).trim();
+  if (process.env.BUDDYTOKEN_TOKEN) return String(process.env.BUDDYTOKEN_TOKEN).trim();
+  try {
+    const p = path.join(ROOT, 'auth-token.txt');
+    if (fs.existsSync(p)) return fs.readFileSync(p, 'utf8').trim();
+  } catch { /* 读不到就当作没设置 */ }
+  return '';
+})();
+
+/** 定时安全比较，避免逐字符比较泄露出令牌前缀。 */
+function tokenMatches(got) {
+  const a = Buffer.from(String(got || ''));
+  const b = Buffer.from(AUTH_TOKEN);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
 
 /**
  * 后台任务（云同步）占用同步锁时，用户的手动同步最多排队等它多久。
@@ -128,13 +174,14 @@ try {
 
 /**
  * 放行跨域：看板用 file:// 打开，请求本服务就是跨域请求，Origin 是字面量 "null"。
- * 服务只监听回环地址、不持有任何凭证，所以直接全放行。
- * 不处理预检的话，带 Content-Type 的 POST（签到 / 派猫猫）会被浏览器拦下。
+ * 服务本身不持有官方凭证（凭证只在子进程内存里），读接口全放行；写接口若配了
+ * AUTH_TOKEN，由入口处校验 X-Auth-Token——见下面的请求分发。
+ * 不处理预检的话，带自定义头的 POST 会被浏览器拦下。
  */
 function applyCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-Auth-Token');
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
@@ -564,6 +611,8 @@ function handleStatus(req, res) {
     switching,
     meta: readDataMeta(),
     switchable,
+    // 页面据此判断要不要提示填令牌（true = 写接口需要 X-Auth-Token）
+    authRequired: !!AUTH_TOKEN,
     // 云同步状态：页面排障用（周期、上次结果、本机标识）
     cloud: {
       enabled: !!(cloudSync && cloudSync.isEnabled()),
@@ -690,7 +739,7 @@ function loadAutoConfig(fallback) {
 }
 function saveAutoConfig() {
   try {
-    fs.writeFileSync(AUTO_CONFIG_FILE, JSON.stringify(autoConfig, null, 2), 'utf8');
+    writeFileAtomic(AUTO_CONFIG_FILE, JSON.stringify(autoConfig, null, 2));
     autoConfigMtime = autoConfigFileMtime();   // 自己写的，无需再重载
   } catch { /* 忽略 */ }
 }
@@ -1041,6 +1090,18 @@ const server = http.createServer((req, res) => {
   }
 
   const pathname = req.url.split('?')[0];
+
+  // 写接口令牌校验（只在配置了 AUTH_TOKEN 时生效）。GET 只读，不拦。
+  if (AUTH_TOKEN && req.method === 'POST' && pathname.startsWith('/api/')
+      && !tokenMatches(req.headers['x-auth-token'])) {
+    json(res, 401, {
+      ok: false,
+      error: '需要访问令牌：请在看板「⋯ 更多 → 🔑 访问令牌」里填入与服务端一致的令牌',
+      authRequired: true,
+    });
+    return;
+  }
+
   if (pathname.startsWith('/api/sync') && req.method === 'POST') return handleSync(req, res);
   if (pathname === '/api/reset' && req.method === 'POST') return handleReset(req, res);
   if (pathname === '/api/checkin' && req.method === 'POST') return handleCheckin(req, res);
@@ -1160,6 +1221,9 @@ function listen(port, remaining) {
     console.log('  看板里的「💰 同步积分」「🔄 同步 Token」会真正去拉数据。');
     console.log('  提示：http:// 与 file:// 的浏览器快照互不相通，请固定用一个入口。');
     console.log('  关闭本窗口即停止服务（页面仍可查看，只是同步按钮会提示服务未启动）。');
+    console.log(AUTH_TOKEN
+      ? '  写接口已启用访问令牌（X-Auth-Token）：看板「⋯ 更多 → 🔑 访问令牌」填同一个值。'
+      : '  写接口未设令牌（同网段设备均可操作）；需要时加 --auth-token <值> 或放 auth-token.txt。');
     if (startDiscovery(port)) {
       console.log('  手机端：装好 APK 后点菜单「自动发现服务器」即可连上，无需手填 IP。');
     }
@@ -1180,7 +1244,7 @@ function listen(port, remaining) {
   server.listen(port, HOST);
 }
 
-listen(DEFAULT_PORT, PORT_SCAN_LIMIT);
+listen(PORT_ARG || DEFAULT_PORT, PORT_ARG ? 0 : PORT_SCAN_LIMIT);
 
 /**
  * 自动化调度：每秒评估一次四个开关，谁开着且到点就跑。

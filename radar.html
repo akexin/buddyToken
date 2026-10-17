@@ -377,7 +377,26 @@ td.num,th.num{text-align:right}
   };
   var PALETTE = ['#4f8cff', '#22d3ee', '#a855f7', '#f59e0b', '#22c55e', '#ec4899', '#ef4444', '#14b8a6'];
 
-  var state = { days: 0, model: '', scene: '', project: '' };
+  // 筛选状态持久化：下次打开回到上次看的范围/模型/场景/工作区。
+  // 存 localStorage 而不是数据文件——这是本机浏览器的偏好，不该进仓库，也不该跨设备。
+  var LS_FILTER = 'radar:filters';
+  function loadFilterState() {
+    var d = { days: 0, model: '', scene: '', project: '' };
+    try {
+      var s = JSON.parse(localStorage.getItem(LS_FILTER) || '{}');
+      if (!s || typeof s !== 'object') return d;
+      if (s.days === 0 || s.days === 7 || s.days === 30) d.days = s.days;
+      if (typeof s.model === 'string') d.model = s.model;
+      if (typeof s.scene === 'string') d.scene = s.scene;
+      if (typeof s.project === 'string') d.project = s.project;
+    } catch (e) { /* 隐私模式 / 坏数据：用默认值 */ }
+    return d;
+  }
+  function saveFilterState() {
+    try { localStorage.setItem(LS_FILTER, JSON.stringify(state)); } catch (e) { /* 忽略 */ }
+  }
+
+  var state = loadFilterState();
   var charts = {};
 
   function $(id) { return document.getElementById(id); }
@@ -457,6 +476,18 @@ td.num,th.num{text-align:right}
     fillSelect($('selModel'), topCount(ROWS, 'm', 40), '全部模型');
     fillSelect($('selScene'), topCount(ROWS, 's', 10), '全部场景');
     fillSelect($('selProject'), topCount(ROWS, 'p', 40), '全部工作区');
+
+    // 恢复上次选择；若该项在数据里已不存在（换了数据/工作区改名）就退回「全部」
+    [['selModel', 'model'], ['selScene', 'scene'], ['selProject', 'project']].forEach(function (pair) {
+      var el = $(pair[0]);
+      var values = Array.prototype.map.call(el.options, function (o) { return o.value; });
+      if (state[pair[1]] && values.indexOf(state[pair[1]]) === -1) state[pair[1]] = '';
+      el.value = state[pair[1]] || '';
+    });
+
+    Array.prototype.forEach.call($('segDays').children, function (b) {
+      b.classList.toggle('on', (Number(b.dataset.days) || 0) === state.days);
+    });
   }
 
   // ---------------------------------------------------------------- KPI
@@ -1124,13 +1155,15 @@ td.num,th.num{text-align:right}
     if (!b) return;
     Array.prototype.forEach.call(this.children, function (x) { x.classList.toggle('on', x === b); });
     state.days = Number(b.dataset.days) || 0;
+    saveFilterState();
     renderAll();
   });
-  $('selModel').addEventListener('change', function () { state.model = this.value; renderAll(); });
-  $('selScene').addEventListener('change', function () { state.scene = this.value; renderAll(); });
-  $('selProject').addEventListener('change', function () { state.project = this.value; renderAll(); });
+  $('selModel').addEventListener('change', function () { state.model = this.value; saveFilterState(); renderAll(); });
+  $('selScene').addEventListener('change', function () { state.scene = this.value; saveFilterState(); renderAll(); });
+  $('selProject').addEventListener('change', function () { state.project = this.value; saveFilterState(); renderAll(); });
   $('btnReset').addEventListener('click', function () {
     state = { days: 0, model: '', scene: '', project: '' };
+    saveFilterState();
     $('selModel').value = ''; $('selScene').value = ''; $('selProject').value = '';
     Array.prototype.forEach.call($('segDays').children, function (x, i) { x.classList.toggle('on', i === 0); });
     renderAll();

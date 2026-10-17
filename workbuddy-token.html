@@ -706,6 +706,7 @@ table.cal td.cal-cell.has:hover{
         <button class="menu-item" id="btnPrint" hidden title="打印当前看板，或另存为 PDF（浏览器打印时会自动隐藏按钮和输入框）">🖨 打印 / PDF</button>
         <button class="menu-item" id="btnMd" hidden title="导出分析报告为 Markdown 文件，可直接贴到文档或提交到仓库">⬇ Markdown</button>
         <button class="menu-item" id="btnCsv" hidden title="导出聚合维度的汇总表：模型 / 客户端 / 日期 / 时段 / 工具。要逐条明细请用「完整明细」卡片里的导出">⬇ CSV</button>
+        <button class="menu-item" id="btnApiToken" title="设置本地服务的访问令牌。服务端用 --auth-token 或根目录 auth-token.txt 设了令牌后，同步 / 签到 / 切换 / 清空这些写操作必须带上同一个值；令牌只存在当前浏览器，不写盘">🔑 访问令牌</button>
         <div class="menu-sep"></div>
         <button class="menu-item danger" id="btnReset" title="清空全部数据：项目目录里的数据文件（Token 数据、账单明细、报告、余额与签到历史）以及浏览器里的本地快照与目录授权。清空后重新同步即可再生成。不可撤销，会连续确认两次">🗑 一键清空数据</button>
       </div>
@@ -1180,7 +1181,7 @@ function mergeByRequestId(oldRows, newRows){
  * =======================================================*/
 const state = {
   all: [], fileName: '', sheetName: '',
-  filters: { from:'', to:'', fromTs:0, toTs:0, models:new Set(), clients:new Set(), accounts:new Set(), machines:new Set() },
+  filters: { from:'', to:'', fromTs:0, toTs:0, quick:'', models:new Set(), clients:new Set(), accounts:new Set(), machines:new Set() },
   charts: {},
   tokenLoaded: false,   // token-usage-data.js 是否成功加载
   tokenMatch: null,     // { hit, miss, noId, total, rate } —— 基于全量 state.all，不随筛选变化
@@ -4117,6 +4118,24 @@ const DailySpend = (() => {
   return { on, recent, estimate };
 })();
 
+/* 本地服务的访问令牌。
+ *
+ * 服务端用 `--auth-token <值>` 或根目录 auth-token.txt 设了令牌后，所有写接口
+ * （同步 / 签到 / 切换账号 / 清空）必须带 X-Auth-Token。令牌只存在当前浏览器的
+ * localStorage：不写进数据文件、不随快照导出、也不出现在 URL 里。
+ * 没设令牌时 authHeaders() 返回空对象，请求与以前完全一致。
+ */
+const API_TOKEN_KEY = 'points-dashboard:api-token';
+function apiToken(){
+  try{ return (localStorage.getItem(API_TOKEN_KEY) || '').trim(); }catch(e){ return ''; }
+}
+function authHeaders(extra){
+  const h = Object.assign({}, extra || {});
+  const t = apiToken();
+  if(t) h['X-Auth-Token'] = t;
+  return h;
+}
+
 /* =========================================================
  * 10.66 本地服务同步通道（file:// 下同样可用）
  *
@@ -4224,7 +4243,7 @@ const ServerSync = (() => {
       const body = uid ? JSON.stringify({ uid }) : null;
       const r = await fetch(url, {
         method: 'POST',
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        headers: authHeaders(body ? { 'Content-Type': 'application/json' } : {}),
         body: body || undefined,
       });
       const j = await r.json();
@@ -4244,7 +4263,7 @@ const ServerSync = (() => {
     try{
       const r = await fetch(b + path, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload || {}),
       });
       const j = await r.json();
@@ -4455,7 +4474,7 @@ const AutoTasks = (() => {
       try{
         const r = await fetch(b + '/api/auto', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ [key]: next }),
         });
         const j = await r.json();
@@ -5351,8 +5370,12 @@ function persistFilters(){
   _pfTimer = setTimeout(() => {
     Persist.saveMeta({
       filters: {
-        // 日期范围刻意不存：看板每次打开都回到 DEFAULT_RECENT_DAYS 的默认窗口，
-        // 只有模型 / 客户端 / 机器筛选沿用上次
+        // 日期范围也存：下次打开直接回到上次看的那一段，不用每次重新调。
+        // quick 记的是快捷按钮（7 / 30 / 1y / all…），恢复时按「数据最后一天」
+        // 重新计算，而不是套用当时的绝对日期——否则同步完新数据会看不到最新部分。
+        from:  state.filters.from,
+        to:    state.filters.to,
+        quick: state.filters.quick || '',
         models:  [...state.filters.models],
         clients: [...state.filters.clients],
         machines: [...state.filters.machines]
@@ -5370,9 +5393,43 @@ function markQuick(q){
     b.classList.toggle('on', b.dataset.q === q));
 }
 
+/* 快捷范围的执行入口。applyQuick 定义在 init 里（依赖 DOM），
+   applyDataset 在顶层且要先于 init 可用，所以留一个引用槽。 */
+const RangeCtl = {};
+
+/**
+ * 把上次保存的筛选条件灌回 state。只做一次（每页加载）。
+ *
+ * 放在这里而不是 tryRestore：恢复快照只是数据来源之一，没快照时页面会直接吃
+ * 服务端的数据文件，那条路径也必须恢复筛选——否则「连续使用体验」只在装过
+ * 快照的机器上成立。
+ */
+let _filtersRestored = false;
+function restoreSavedFilters(){
+  if(_filtersRestored) return;
+  _filtersRestored = true;
+
+  let f = null;
+  try{ f = Persist.loadMeta().filters; }catch(e){ return; }
+  if(!f) return;
+
+  if(f.quick){
+    // 快捷范围记的是相对区间，交给 applyDataset 里的 applyQuick 按最新数据重算
+    state.filters.quick = f.quick;
+  }else if(f.from && f.to){
+    state.filters.from = f.from;
+    state.filters.to   = f.to;
+    state.filters.quick = '';
+  }
+  (f.models  || []).forEach(m => state.filters.models.add(m));
+  (f.clients || []).forEach(c => state.filters.clients.add(c));
+  (f.machines || []).forEach(m => state.filters.machines.add(m));
+}
+
 /* 应用数据集（保留筛选语义） */
 function applyDataset(rows, sheet, fileName){
   state.all = rows;
+  restoreSavedFilters();
   state.sheetName = sheet || '';
   if(fileName) state.fileName = fileName;
   $('srcName').textContent = state.fileName ? `· ${state.fileName}` : '';
@@ -5392,15 +5449,28 @@ function applyDataset(rows, sheet, fileName){
 
   // 日期范围只扩不缩；打开看板时若还没有范围（首次导入 / 刚清空筛选），
   // 默认落在最近 DEFAULT_RECENT_DAYS 天——数据够长时不必每次都从最早那天看起
-  if(!state.filters.from && !state.filters.to){
+  const applyDefaultRange = () => {
     const d = parseDs(maxD);
     d.setDate(d.getDate() - (DEFAULT_RECENT_DAYS - 1));
     state.filters.to = maxD;
     state.filters.from = fmtDate(d) < minD ? minD : fmtDate(d);   // 数据不满窗口就退回首日
+    state.filters.quick = String(DEFAULT_RECENT_DAYS);
     markQuick(String(DEFAULT_RECENT_DAYS));
+  };
+
+  // 恢复的相对范围（近7日/近30日…）不能先套默认值——applyDefaultRange 会把
+  // quick 改成 60，后面的 applyQuick 就跟着跑偏了。有 quick 时直接交给它重算。
+  if(state.filters.quick && RangeCtl.applyQuick){
+    RangeCtl.applyQuick(state.filters.quick);
+  }else if(!state.filters.from && !state.filters.to){
+    applyDefaultRange();
   }
   if(!state.filters.from || state.filters.from < minD) state.filters.from = minD;
   if(!state.filters.to   || state.filters.to   > maxD) state.filters.to   = maxD;
+
+  // 上次保存的范围可能整个落在当前数据之外（清空过 / 换了一份数据）：
+  // 两端夹完会出现 from > to，这种时候退回默认窗口，别给用户一个空看板
+  if(state.filters.from > state.filters.to) applyDefaultRange();
 
   $('dateFrom').min = $('dateTo').min = minD;
   $('dateFrom').max = $('dateTo').max = maxD;
@@ -5423,18 +5493,10 @@ async function tryRestore(){
     if(!snap || !snap.rows || !snap.rows.length) return false;
 
     const rows = Persist.deserialize(snap.rows);
-    applyDataset(rows, snap.sheetName, snap.fileName);
 
-    const meta = Persist.loadMeta();
-    const f = meta.filters;
-    if(f){
-      // 日期范围不在此列（见 persistFilters）：留着 applyDataset 给的默认窗口，
-      // 让看板每次都从「近 N 天」开始，而不是停在上次调过的范围
-      (f.models  || []).forEach(m => state.filters.models.add(m));
-      (f.clients || []).forEach(c => state.filters.clients.add(c));
-      (f.machines || []).forEach(m => state.filters.machines.add(m));
-      render();
-    }
+    // 筛选条件由 applyDataset 里的 restoreSavedFilters 统一恢复：
+    // 有快照 / 没快照（直接吃服务端数据文件）两条路径行为一致
+    applyDataset(rows, snap.sheetName, snap.fileName);
 
     setSaveState('saved', `已恢复 · ${timeAgo(snap.savedAt)}`);
     showBanner(snap, rows.length);
@@ -5709,12 +5771,16 @@ async function loadFile(file){
 
   $('dateFrom').addEventListener('change', e => {
     state.filters.from = e.target.value; state.filters.fromTs = 0;
+    state.filters.quick = '';
     markQuick('');   // 手动改日期，快捷按钮全部熄灭
+    persistFilters();
     render();
   });
   $('dateTo').addEventListener('change',   e => {
     state.filters.to = e.target.value; state.filters.toTs = 0;
+    state.filters.quick = '';
     markQuick('');
+    persistFilters();
     render();
   });
 
@@ -5777,8 +5843,13 @@ async function loadFile(file){
   $('quickBtns').addEventListener('click', e => {
     const b = e.target.closest('[data-q]');
     if(!b) return;
+    state.filters.quick = b.dataset.q;
     applyQuick(b.dataset.q);
+    persistFilters();
   });
+
+  // applyDataset 需要在数据更新后重新套用相对范围（见其中的 RangeCtl 调用）
+  RangeCtl.applyQuick = applyQuick;
 
   $('btnPrint').addEventListener('click', () => window.print());
   $('btnMd').addEventListener('click', () => {
@@ -5909,6 +5980,27 @@ async function loadFile(file){
     document.addEventListener('click', () => { menu.hidden = true; });
     document.addEventListener('keydown', e => { if(e.key === 'Escape') menu.hidden = true; });
   })();
+
+  /* 🔑 访问令牌：只影响写接口，存在当前浏览器的 localStorage 里 */
+  $('btnApiToken').addEventListener('click', () => {
+    const cur = apiToken();
+    const v = prompt(
+      '本地服务访问令牌（留空 = 清除）\n\n' +
+      '服务端设置方式：\n' +
+      '  node server.js --auth-token 你的令牌\n' +
+      '或在项目根目录放 auth-token.txt（一行）\n\n' +
+      '令牌只保存在当前浏览器，不上传、不写进数据文件。',
+      cur
+    );
+    if(v === null) return;                       // 取消
+    try{
+      if(v.trim()) localStorage.setItem(API_TOKEN_KEY, v.trim());
+      else         localStorage.removeItem(API_TOKEN_KEY);
+      toast(v.trim() ? '已保存访问令牌' : '已清除访问令牌');
+    }catch(e){
+      alert('浏览器拒绝写入本地存储：' + e.message);
+    }
+  });
 
   /* ⚡ 一键同步 = 积分 + Token 串行跑一遍（离线时退化为只重扫 Token） */
   $('btnSyncAll').addEventListener('click', () => runServerSyncAll($('btnSyncAll')));

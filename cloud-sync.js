@@ -31,6 +31,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { writeFileAtomic } = require('./atomic-write');
 
 // console 输出同步落盘到 logs/buddytoken-YYYYMMDD.log（见 app-logger.js）
 require('./app-logger');
@@ -149,7 +150,7 @@ function ensureConfigTemplate() {
     ...CONFIG_DEFAULTS,
   };
   try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(tpl, null, 2) + '\n', 'utf8');
+    writeFileAtomic(CONFIG_FILE, JSON.stringify(tpl, null, 2) + '\n');
     console.log('  [云同步] 已生成配置模板 sync-config.json（默认关闭，填好并改成 enabled=true 才会生效）');
     return true;
   } catch {
@@ -226,7 +227,7 @@ function loadState() {
 
 function saveState(state) {
   try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+    writeFileAtomic(STATE_FILE, JSON.stringify(state, null, 2));
   } catch { /* 状态写不进去不该中断同步 */ }
 }
 
@@ -290,7 +291,7 @@ function loadDataFile(file) {
 }
 
 function saveDataFile(file, header, data) {
-  fs.writeFileSync(file, header + DATA_MARKER + JSON.stringify(data) + ';\n', 'utf8');
+  writeFileAtomic(file, header + DATA_MARKER + JSON.stringify(data) + ';\n');
 }
 
 /** 本地自然日（与 workbuddy-api.js 的 localDate 同口径）。 */
@@ -925,7 +926,7 @@ function writeCreditHistoryBack(hist) {
 
   if (changed) {
     try {
-      fs.writeFileSync(CREDIT_HISTORY_FILE, JSON.stringify({ ...cur, byUid }), 'utf8');
+      writeFileAtomic(CREDIT_HISTORY_FILE, JSON.stringify({ ...cur, byUid }));
     } catch { /* 写不进去不影响主流程 */ }
   }
   return changed;
