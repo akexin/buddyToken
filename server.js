@@ -1152,6 +1152,7 @@ function listen(port, remaining) {
     console.log('  buddyToken 网站已启动（监听 ' + HOST + ':' + port + '）');
     console.log('');
     for (const u of urls) console.log('  看板：' + u + '/');
+    console.log('  全息轨迹：' + urls[0] + '/radar.html');
     console.log('  接口：' + urls[0] + '/api/…');
     console.log('');
     console.log('  看板页面与数据（token-usage-data.js）都由本服务提供，');

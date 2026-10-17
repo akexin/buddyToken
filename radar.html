@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>积分全息轨迹 · Token/Point Radar</title>
+<style>
+:root{
+  --bg:#080b12;
+  --panel:#111826;
+  --panel2:#0d1420;
+  --line:#1e2a3d;
+  --text:#e7eefb;
+  --muted:#8494ad;
+  --blue:#4f8cff;
+  --cyan:#22d3ee;
+  --green:#22c55e;
+  --orange:#f59e0b;
+  --red:#ef4444;
+  --purple:#a855f7;
+  --pink:#ec4899;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1200px 600px at 12% -10%, rgba(79,140,255,.14), transparent 60%),
+    radial-gradient(900px 500px at 88% 0%, rgba(168,85,247,.10), transparent 60%),
+    var(--bg);
+  color:var(--text);
+  font:14px/1.55 system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  -webkit-text-size-adjust:100%;
+  padding:0 0 calc(28px + env(safe-area-inset-bottom));
+}
+.wrap{max-width:1560px;margin:0 auto;padding:0 20px}
+
+/* ---------- 顶部 ---------- */
+header{
+  position:sticky;top:0;z-index:30;
+  backdrop-filter:blur(14px);
+  background:rgba(8,11,18,.82);
+  border-bottom:1px solid var(--line);
+  padding:14px 0 12px;
+}
+.hd{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.hd h1{
+  font-size:19px;margin:0;letter-spacing:.4px;font-weight:650;
+  display:flex;align-items:center;gap:10px;white-space:nowrap;
+}
+.hd h1 .dot{
+  width:9px;height:9px;border-radius:50%;
+  background:linear-gradient(135deg,var(--cyan),var(--blue));
+  box-shadow:0 0 14px rgba(79,140,255,.9);
+}
+.hd .sub{color:var(--muted);font-size:12px;letter-spacing:.2px}
+.hd .spacer{flex:1}
+.filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select,input[type=search]{
+  background:var(--panel2);color:var(--text);border:1px solid var(--line);
+  border-radius:9px;padding:7px 10px;font:inherit;font-size:12.5px;outline:none;
+  transition:border-color .15s;
+}
+select:hover,input[type=search]:hover{border-color:#2b3d57}
+select:focus,input[type=search]:focus{border-color:var(--blue)}
+.btn{
+  background:var(--panel2);color:var(--text);border:1px solid var(--line);
+  border-radius:9px;padding:7px 12px;font:inherit;font-size:12.5px;cursor:pointer;
+  transition:all .15s;
+}
+.btn:hover{border-color:#2b3d57;background:#16203300}
+.btn.on{background:rgba(79,140,255,.16);border-color:rgba(79,140,255,.55);color:#cfe1ff}
+.seg{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{
+  background:none;border:0;color:var(--muted);padding:7px 11px;font:inherit;
+  font-size:12.5px;cursor:pointer;border-right:1px solid var(--line);
+}
+.seg button:last-child{border-right:0}
+.seg button.on{color:#cfe1ff;background:rgba(79,140,255,.16)}
+
+/* ---------- KPI ---------- */
+.kpis{
+  display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;
+  margin:18px 0 14px;
+}
+.kpi{
+  background:linear-gradient(180deg,var(--panel),var(--panel2));
+  border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+  position:relative;overflow:hidden;
+}
+.kpi::after{
+  content:"";position:absolute;inset:0 auto auto 0;height:2px;width:100%;
+  background:linear-gradient(90deg,var(--blue),transparent);
+  opacity:.55;
+}
+.kpi .k{color:var(--muted);font-size:11.5px;letter-spacing:.5px;text-transform:uppercase}
+.kpi .v{font-size:25px;font-weight:680;margin-top:5px;letter-spacing:.3px;font-variant-numeric:tabular-nums}
+.kpi .n{color:var(--muted);font-size:11.5px;margin-top:3px}
+.kpi.b .v{color:#8ab4ff}
+.kpi.g .v{color:#57e39a}
+.kpi.o .v{color:#fbbf5c}
+.kpi.p .v{color:#c79bff}
+.kpi.c .v{color:#5ee0f2}
+
+/* ---------- 卡片 ---------- */
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.card{
+  background:linear-gradient(180deg,var(--panel),var(--panel2));
+  border:1px solid var(--line);border-radius:16px;padding:16px 18px 12px;
+  min-width:0;
+}
+.card.span2{grid-column:1/-1}
+.card h3{
+  margin:0 0 12px;font-size:13px;font-weight:600;color:#c3d2e9;
+  display:flex;align-items:center;gap:8px;letter-spacing:.3px;
+}
+.card h3 .bar{width:3px;height:13px;border-radius:2px;background:linear-gradient(180deg,var(--cyan),var(--blue))}
+.card h3 .hint{margin-left:auto;color:var(--muted);font-size:11px;font-weight:400}
+.chart{width:100%;height:268px}
+.chart.tall{height:400px}
+
+/* ---------- 日历热力 ---------- */
+.calrow{display:flex;gap:26px;align-items:flex-start}
+/* overflow-x:auto 会把 overflow-y 也算成 auto，必须显式关掉，否则多一条竖滚动条 */
+.calwrap{overflow-x:auto;overflow-y:hidden;padding-bottom:6px;flex:0 0 auto}
+/* 固定格径 + 固定 7 行：auto 行高会被父级 flex 拉伸，格子会散开 */
+.cal{
+  --c:16px;
+  display:grid;gap:3px;width:max-content;
+  grid-auto-flow:column;
+  grid-template-rows:repeat(7,var(--c));
+  grid-auto-columns:var(--c);
+}
+.cal .cell{
+  width:var(--c);height:var(--c);border-radius:3px;background:#151f2f;
+  outline:1px solid rgba(255,255,255,.03);
+}
+.cal .cell.l1{background:#173a5e}
+.cal .cell.l2{background:#1f5f9e}
+.cal .cell.l3{background:#2f86d6}
+.cal .cell.l4{background:#57b6ff;box-shadow:0 0 8px rgba(87,182,255,.35)}
+.cal .cell.empty{background:transparent;outline:0}
+.callegend{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;margin-top:8px;flex-wrap:wrap}
+.callegend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+.calstats{
+  display:flex;flex-wrap:wrap;gap:12px 40px;
+  flex:1;min-width:0;padding-top:2px;
+}
+.calstats div{color:var(--muted);font-size:11.5px}
+.calstats b{display:block;color:var(--text);font-size:17px;font-weight:640;margin-top:2px;font-variant-numeric:tabular-nums}
+
+/* ---------- 表格 ---------- */
+.tblwrap{overflow:auto;max-height:460px;border-radius:10px;border:1px solid var(--line)}
+table{border-collapse:collapse;width:100%;font-size:12.5px;white-space:nowrap}
+thead th{
+  position:sticky;top:0;z-index:2;background:#0e1623;color:var(--muted);
+  font-weight:500;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);
+  font-size:11.5px;letter-spacing:.4px;
+}
+tbody td{padding:8px 12px;border-bottom:1px solid rgba(30,42,61,.55);font-variant-numeric:tabular-nums}
+tbody tr:hover{background:rgba(79,140,255,.055)}
+td.num,th.num{text-align:right}
+.tag{
+  display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;
+  border:1px solid transparent;line-height:1.6;
+}
+.tag.Coding{color:#7fb2ff;background:rgba(79,140,255,.13);border-color:rgba(79,140,255,.3)}
+.tag.Debug{color:#fbbf5c;background:rgba(245,158,11,.12);border-color:rgba(245,158,11,.3)}
+.tag.Research{color:#5ee0f2;background:rgba(34,211,238,.11);border-color:rgba(34,211,238,.28)}
+.tag.Agent{color:#c79bff;background:rgba(168,85,247,.12);border-color:rgba(168,85,247,.3)}
+.tag.Chat{color:#9fb0c8;background:rgba(132,148,173,.12);border-color:rgba(132,148,173,.28)}
+
+/* ---------- 提示 / 空态 ---------- */
+.notice{
+  margin:14px 0;padding:12px 14px;border-radius:12px;font-size:12.5px;
+  border:1px solid rgba(245,158,11,.35);background:rgba(245,158,11,.08);color:#f6d69a;
+}
+.notice code{background:rgba(0,0,0,.3);padding:1px 6px;border-radius:5px}
+.empty{color:var(--muted);text-align:center;padding:40px 0;font-size:13px}
+.foot{color:var(--muted);font-size:11.5px;margin-top:16px;line-height:1.9}
+.foot b{color:#a9bcd8;font-weight:500}
+
+/* ---------- 移动端 ---------- */
+@media (max-width:1180px){
+  .kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (max-width:880px){
+  .wrap{padding:0 12px}
+  header{padding:10px 0 9px}
+  .hd{gap:10px}
+  .hd h1{font-size:16px}
+  .hd .sub{display:none}
+  .filters{width:100%;gap:6px}
+  .filters .seg{width:100%}
+  .filters .seg button{flex:1;padding:7px 4px}
+  .filters select{flex:1 1 45%;min-width:0;max-width:calc(50% - 3px)}
+  .filters .btn{flex:0 0 auto}
+  .calrow{flex-direction:column;gap:14px}
+  .cal{--c:15px}
+  .calstats{width:100%;gap:10px 32px}
+  .calstats b{font-size:15px}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .kpi{padding:11px 12px;border-radius:12px}
+  .kpi .v{font-size:20px}
+  .grid{grid-template-columns:1fr;gap:10px}
+  .card{padding:13px 12px 8px;border-radius:14px}
+  .chart{height:230px}
+  .chart.tall{height:340px}
+  .tblwrap{max-height:380px}
+}
+@media (max-width:430px){
+  .kpi .v{font-size:18px}
+  .kpi .k{font-size:10.5px}
+  .cal{--c:13px}
+  .chart{height:210px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap hd">
+    <h1><span class="dot"></span>积分全息轨迹</h1>
+    <span class="sub" id="rangeText">Token / Point Radar</span>
+    <span class="spacer"></span>
+    <div class="filters">
+      <div class="seg" id="segDays">
+        <button data-days="0" class="on">全部</button>
+        <button data-days="7">近 7 天</button>
+        <button data-days="30">近 30 天</button>
+      </div>
+      <select id="selModel"><option value="">全部模型</option></select>
+      <select id="selScene"><option value="">全部场景</option></select>
+      <select id="selProject"><option value="">全部工作区</option></select>
+      <button class="btn" id="btnReset">重置</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="notice"></div>
+  <section class="kpis" id="kpis"></section>
+
+  <section class="grid">
+    <div class="card span2">
+      <h3><span class="bar"></span>消耗日历<span class="hint" id="calHint"></span></h3>
+      <div class="calrow">
+        <div>
+          <div class="calwrap"><div class="cal" id="cal"></div></div>
+          <div class="callegend">
+            <span>少</span>
+            <i style="background:#151f2f"></i><i style="background:#173a5e"></i><i style="background:#1f5f9e"></i><i style="background:#2f86d6"></i><i style="background:#57b6ff"></i>
+            <span>多</span>
+            <span id="calMax" style="margin-left:8px"></span>
+          </div>
+        </div>
+        <div class="calstats" id="calStats"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3><span class="bar"></span>时段分布<span class="hint">0–23 点</span></h3>
+      <div class="chart" id="hour"></div>
+    </div>
+
+    <div class="card">
+      <h3><span class="bar"></span>场景构成<span class="hint">按积分</span></h3>
+      <div class="chart" id="scene"></div>
+    </div>
+
+    <div class="card span2">
+      <h3><span class="bar"></span>流向桑基<span class="hint">工作区 → 模型 → 场景</span></h3>
+      <div class="chart tall" id="sankey"></div>
+    </div>
+
+    <div class="card">
+      <h3><span class="bar"></span>耗时 × 积分<span class="hint">越大越贵越慢</span></h3>
+      <div class="chart" id="scatter"></div>
+    </div>
+
+    <div class="card">
+      <h3><span class="bar"></span>性价比榜<span class="hint">每 100 积分产出</span></h3>
+      <div class="tblwrap" style="max-height:268px;border:0"><table id="roi"></table></div>
+    </div>
+
+    <div class="card span2">
+      <h3><span class="bar"></span>请求明细<span class="hint" id="tblHint"></span></h3>
+      <div class="tblwrap"><table id="tbl"></table></div>
+    </div>
+  </section>
+
+  <div class="foot" id="foot"></div>
+</main>
+
+<script src="radar-data.js"></script>
+<script>
+/* ============================================================
+   积分全息轨迹看板（前端）
+   数据来自 radar-collect.js 生成的 radar-data.js：
+     rows: [{t,m,p,a,i,o,c,cr,d,x,s}]
+     t 时间戳 | m 模型 | p 工作区 | a agent | i/o 输入输出 token
+     c 积分 | cr 缓存命中 token | d 耗时ms（可能为 null）| s 场景
+   ============================================================ */
+(function () {
+  'use strict';
+
+  var D = window.__RADAR_DATA__;
+
+  var SCENE_COLOR = {
+    Coding: '#4f8cff',
+    Debug: '#f59e0b',
+    Research: '#22d3ee',
+    Agent: '#a855f7',
+    Chat: '#8494ad'
+  };
+  var PALETTE = ['#4f8cff', '#22d3ee', '#a855f7', '#f59e0b', '#22c55e', '#ec4899', '#ef4444', '#14b8a6'];
+
+  var state = { days: 0, model: '', scene: '', project: '' };
+  var charts = {};
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function fmt(n) {
+    if (!isFinite(n)) return '-';
+    var a = Math.abs(n);
+    if (a >= 1e8) return (n / 1e8).toFixed(2) + ' 亿';
+    if (a >= 1e4) return (n / 1e4).toFixed(1) + ' 万';
+    if (a >= 100) return Math.round(n).toLocaleString();
+    return (Math.round(n * 10) / 10).toString();
+  }
+  function fmtTok(n) {
+    if (!n) return '0';
+    if (n >= 1e8) return (n / 1e8).toFixed(2) + ' 亿';
+    if (n >= 1e4) return (n / 1e4).toFixed(1) + ' 万';
+    return String(Math.round(n));
+  }
+  function pct(a, b) { return b ? (a / b * 100).toFixed(1) + '%' : '-'; }
+  function dayKey(ts) {
+    var d = new Date(ts);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function fmtTime(ts) {
+    var d = new Date(ts);
+    return String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') +
+      ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+  function fmtDur(ms) {
+    if (ms == null) return '-';
+    if (ms < 1000) return ms + ' ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + ' s';
+    return (ms / 60000).toFixed(1) + ' min';
+  }
+
+  // ---------------------------------------------------------------- 数据
+
+  if (!D || !D.rows || !D.rows.length) {
+    $('notice').innerHTML = '<div class="notice">没有读到数据。请先在仓库根目录运行 <code>node radar-collect.js</code>，' +
+      '它会扫描本机会话与 trace，生成 <code>radar-data.js</code>。</div>';
+    return;
+  }
+
+  var ROWS = D.rows;
+
+  function filtered() {
+    var cutoff = state.days ? Date.now() - state.days * 86400000 : 0;
+    return ROWS.filter(function (r) {
+      if (cutoff && r.t < cutoff) return false;
+      if (state.model && r.m !== state.model) return false;
+      if (state.scene && r.s !== state.scene) return false;
+      if (state.project && r.p !== state.project) return false;
+      return true;
+    });
+  }
+
+  // ---------------------------------------------------------------- 筛选器
+
+  function topCount(rows, key, n) {
+    var m = {};
+    for (var i = 0; i < rows.length; i++) m[rows[i][key]] = (m[rows[i][key]] || 0) + 1;
+    return Object.keys(m).sort(function (a, b) { return m[b] - m[a]; }).slice(0, n);
+  }
+
+  function fillSelect(el, items, allLabel) {
+    var cur = el.value;
+    el.innerHTML = '<option value="">' + allLabel + '</option>' +
+      items.map(function (x) { return '<option value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('');
+    if (cur && items.indexOf(cur) !== -1) el.value = cur;
+  }
+
+  function buildFilters() {
+    fillSelect($('selModel'), topCount(ROWS, 'm', 40), '全部模型');
+    fillSelect($('selScene'), topCount(ROWS, 's', 10), '全部场景');
+    fillSelect($('selProject'), topCount(ROWS, 'p', 40), '全部工作区');
+  }
+
+  // ---------------------------------------------------------------- KPI
+
+  function renderKPI(rows) {
+    var credit = 0, tokIn = 0, tokOut = 0, cache = 0, durSum = 0, durN = 0, durAll = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      credit += r.c || 0;
+      tokIn += r.i || 0;
+      tokOut += r.o || 0;
+      cache += r.cr || 0;
+      if (r.d != null) { durSum += r.d; durN++; }
+    }
+    // 「有耗时」占比按总请求数算，避免只挑有耗时的样本显得很好看
+    var withDur = rows.filter(function (r) { return r.d != null; }).length;
+    durAll = rows.length;
+
+    var items = [
+      { k: '总积分', v: credit.toFixed(1), n: rows.length + ' 次请求', cls: 'o' },
+      { k: '总 Token', v: fmtTok(tokIn + tokOut), n: '输入 ' + fmtTok(tokIn) + ' · 输出 ' + fmtTok(tokOut), cls: 'b' },
+      { k: '缓存命中', v: pct(cache, tokIn), n: '省下 ' + fmtTok(cache) + ' 输入 token', cls: 'g' },
+      { k: '平均耗时', v: durN ? (durSum / durN / 1000).toFixed(1) + ' s' : '-', n: durN + ' 次有耗时记录', cls: 'c' },
+      { k: '单次成本', v: rows.length ? (credit / rows.length).toFixed(2) : '-', n: '积分 / 次', cls: 'p' },
+      { k: '耗时覆盖', v: pct(withDur, durAll), n: 'trace 仅保留约 11 天', cls: '' }
+    ];
+    $('kpis').innerHTML = items.map(function (x) {
+      return '<div class="kpi ' + x.cls + '"><div class="k">' + x.k + '</div>' +
+        '<div class="v">' + x.v + '</div><div class="n">' + x.n + '</div></div>';
+    }).join('');
+  }
+
+  // ---------------------------------------------------------------- 日历
+
+  function renderCalendar(rows) {
+    var byDay = {};
+    for (var i = 0; i < rows.length; i++) {
+      var k = dayKey(rows[i].t);
+      byDay[k] = (byDay[k] || 0) + (rows[i].c || 0);
+    }
+    var keys = Object.keys(byDay).sort();
+    var el = $('cal');
+    if (!keys.length) { el.innerHTML = '<div class="empty">当前筛选无数据</div>'; return; }
+
+    var first = new Date(keys[0] + 'T00:00:00');
+    var last = new Date(keys[keys.length - 1] + 'T00:00:00');
+    // 对齐到周一，保证一列是一周
+    var start = new Date(first);
+    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+
+    var totalDays = Math.round((last - start) / 86400000) + 1;
+    var weeks = Math.ceil(totalDays / 7);
+
+    var vals = keys.map(function (k) { return byDay[k]; }).sort(function (a, b) { return a - b; });
+    var q = function (p) { return vals[Math.min(vals.length - 1, Math.floor(vals.length * p))] || 0; };
+    var th = [q(0.15), q(0.4), q(0.65), q(0.85)];
+
+    var cells = [];
+    for (var d = 0; d < weeks * 7; d++) {
+      var dt = new Date(start);
+      dt.setDate(start.getDate() + d);
+      var key = dayKey(dt.getTime());
+      var v = byDay[key] || 0;
+      if (dt < first || dt > last) { cells.push('<div class="cell empty"></div>'); continue; }
+      var lv = v === 0 ? 0 : (v <= th[0] ? 1 : v <= th[1] ? 2 : v <= th[2] ? 3 : 4);
+      cells.push('<div class="cell' + (lv ? ' l' + lv : '') + '" title="' + key + ' · ' + v.toFixed(1) + ' 积分"></div>');
+    }
+
+    el.innerHTML = cells.join('');
+
+    $('calHint').textContent = keys[0] + ' ~ ' + keys[keys.length - 1] + ' · ' + weeks + ' 周';
+    $('calMax').textContent = '';
+
+    // 右侧摘要：日历本身只有 5 周，单放会显得空，顺带把关键结论摆出来
+    var total = 0, maxV = 0, maxKey = keys[0];
+    for (var j = 0; j < keys.length; j++) {
+      total += byDay[keys[j]];
+      if (byDay[keys[j]] > maxV) { maxV = byDay[keys[j]]; maxKey = keys[j]; }
+    }
+    var longest = 1, cur = 1;
+    for (var k = 1; k < keys.length; k++) {
+      var diff = (new Date(keys[k]) - new Date(keys[k - 1])) / 86400000;
+      cur = diff === 1 ? cur + 1 : 1;
+      if (cur > longest) longest = cur;
+    }
+    var stats = [
+      ['活跃天数', keys.length + ' 天'],
+      ['日均消耗', (total / keys.length).toFixed(1)],
+      ['单日最高', maxV.toFixed(1) + '<span style="font-size:11px;color:#8494ad;font-weight:400"> ' + maxKey.slice(5) + '</span>'],
+      ['最长连续', longest + ' 天']
+    ];
+    $('calStats').innerHTML = stats.map(function (s) {
+      return '<div>' + s[0] + '<b>' + s[1] + '</b></div>';
+    }).join('');
+  }
+
+  // ---------------------------------------------------------------- 图表
+
+  function ensureECharts() {
+    if (window.echarts) return Promise.resolve(true);
+    var srcs = [
+      'https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js',
+      'https://unpkg.com/echarts@5.5.1/dist/echarts.min.js',
+      'https://cdn.bootcdn.net/ajax/libs/echarts/5.5.1/echarts.min.js'
+    ];
+    return srcs.reduce(function (p, src) {
+      return p.then(function (ok) {
+        if (ok) return true;
+        return new Promise(function (resolve) {
+          var s = document.createElement('script');
+          s.src = src; s.async = true;
+          s.onload = function () { resolve(!!window.echarts); };
+          s.onerror = function () { resolve(false); };
+          document.head.appendChild(s);
+        });
+      });
+    }, Promise.resolve(false));
+  }
+
+  function chart(id) {
+    if (!charts[id]) charts[id] = echarts.init($(id), null, { renderer: 'canvas' });
+    return charts[id];
+  }
+
+  var BASE_TEXT = {
+    color: '#e7eefb',
+    textStyle: { color: '#c3d2e9', fontSize: 11.5 },
+    tooltip: {
+      backgroundColor: 'rgba(13,20,32,.96)',
+      borderColor: '#243349',
+      textStyle: { color: '#e7eefb', fontSize: 12 }
+    }
+  };
+
+  function axisCommon() {
+    return {
+      axisLine: { lineStyle: { color: '#243349' } },
+      axisTick: { show: false },
+      axisLabel: { color: '#8494ad', fontSize: 11 },
+      splitLine: { lineStyle: { color: 'rgba(30,42,61,.7)' } }
+    };
+  }
+
+  function renderHour(rows) {
+    var credit = new Array(24).fill(0), count = new Array(24).fill(0);
+    for (var i = 0; i < rows.length; i++) {
+      var h = new Date(rows[i].t).getHours();
+      credit[h] += rows[i].c || 0;
+      count[h]++;
+    }
+    var c = chart('hour');
+    c.setOption({
+      backgroundColor: 'transparent',
+      grid: { left: 42, right: 14, top: 26, bottom: 26 },
+      tooltip: Object.assign({ trigger: 'axis' }, BASE_TEXT.tooltip),
+      legend: { top: 0, right: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: '#8494ad', fontSize: 11 } },
+      xAxis: Object.assign({ type: 'category', data: Array.from({ length: 24 }, function (_, i) { return i + '时'; }) }, axisCommon()),
+      yAxis: [
+        Object.assign({ type: 'value', name: '积分', nameTextStyle: { color: '#8494ad', fontSize: 10 } }, axisCommon()),
+        Object.assign({ type: 'value', name: '请求', nameTextStyle: { color: '#8494ad', fontSize: 10 }, splitLine: { show: false } }, axisCommon())
+      ],
+      series: [
+        {
+          name: '积分', type: 'bar', data: credit, barMaxWidth: 18,
+          itemStyle: {
+            borderRadius: [4, 4, 0, 0],
+            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: '#4f8cff' }, { offset: 1, color: 'rgba(79,140,255,.22)' }] }
+          }
+        },
+        { name: '请求', type: 'line', yAxisIndex: 1, data: count, smooth: true, symbol: 'none', lineStyle: { color: '#22d3ee', width: 1.6, opacity: .85 } }
+      ]
+    }, true);
+  }
+
+  function renderScene(rows) {
+    var m = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!m[r.s]) m[r.s] = { v: 0, n: 0 };
+      m[r.s].v += r.c || 0;
+      m[r.s].n++;
+    }
+    var data = Object.keys(m).map(function (k) {
+      return { name: k, value: Math.round(m[k].v * 100) / 100, n: m[k].n, itemStyle: { color: SCENE_COLOR[k] || '#8494ad' } };
+    }).sort(function (a, b) { return b.value - a.value; });
+
+    var c = chart('scene');
+    c.setOption({
+      backgroundColor: 'transparent',
+      tooltip: Object.assign({
+        trigger: 'item',
+        formatter: function (p) { return p.name + '<br/>积分 ' + p.value + '（' + p.percent + '%）<br/>请求 ' + p.data.n + ' 次'; }
+      }, BASE_TEXT.tooltip),
+      legend: { bottom: 0, itemWidth: 10, itemHeight: 10, textStyle: { color: '#8494ad', fontSize: 11 } },
+      series: [{
+        type: 'pie', radius: ['46%', '70%'], center: ['50%', '44%'],
+        avoidLabelOverlap: true,
+        itemStyle: { borderColor: '#0d1420', borderWidth: 2 },
+        label: { color: '#c3d2e9', fontSize: 11, formatter: '{b}\n{d}%' },
+        labelLine: { lineStyle: { color: '#31435c' } },
+        data: data
+      }]
+    }, true);
+  }
+
+  function renderSankey(rows) {
+    var proj = {}, model = {}, scene = {}, links = {};
+    function add(a, b, v) {
+      var k = a + '|' + b;
+      if (!links[k]) links[k] = { source: a, target: b, value: 0 };
+      links[k].value += v;
+    }
+    // 只取前 8 个工作区 / 6 个模型，其余归「其他」，否则桑基会糊成一团
+    var pTop = topCount(rows, 'p', 5);
+    var mTop = topCount(rows, 'm', 4);
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var v = (r.c || 0) + 0.001;   // 0 积分的链路也要留下痕迹
+      var p = pTop.indexOf(r.p) === -1 ? '其他工作区' : r.p;
+      var m = mTop.indexOf(r.m) === -1 ? '其他模型' : r.m;
+      var s = r.s || 'Chat';
+      proj[p] = (proj[p] || 0) + v;
+      model[m] = (model[m] || 0) + v;
+      scene[s] = (scene[s] || 0) + v;
+      add(p, m, v);
+      add(m, s, v);
+    }
+    var nodes = [];
+    Object.keys(proj).forEach(function (n) { nodes.push({ name: n, itemStyle: { color: '#2b6cb0' } }); });
+    Object.keys(model).forEach(function (n) { nodes.push({ name: n, itemStyle: { color: '#7c5cd6' } }); });
+    Object.keys(scene).forEach(function (n) { nodes.push({ name: n, itemStyle: { color: SCENE_COLOR[n] || '#8494ad' } }); });
+
+    var c = chart('sankey');
+    c.setOption({
+      backgroundColor: 'transparent',
+      tooltip: Object.assign({
+        trigger: 'item',
+        formatter: function (p) {
+          if (p.dataType === 'edge') return p.data.source + ' → ' + p.data.target + '<br/>' + p.data.value.toFixed(1) + ' 积分';
+          return p.name + '<br/>' + (p.value || 0).toFixed(1) + ' 积分';
+        }
+      }, BASE_TEXT.tooltip),
+      series: [{
+        type: 'sankey',
+        left: 118, right: 92, top: 10, bottom: 10,
+        nodeWidth: 12,
+        nodeGap: 14,
+        draggable: false,
+        emphasis: { focus: 'adjacency' },
+        label: { color: '#b9c9e2', fontSize: 10.5 },
+        lineStyle: { color: 'gradient', opacity: .28, curveness: .5 },
+        data: nodes,
+        links: Object.keys(links).map(function (k) { return links[k]; })
+      }]
+    }, true);
+  }
+
+  function renderScatter(rows) {
+    var pts = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (r.d == null) continue;
+      pts.push([Math.max(1, Math.round(r.d / 100) / 10), r.c || 0, r.i + r.o, r.m, r.p]);
+    }
+    var durs = pts.map(function (p) { return p[0]; }).sort(function (a, b) { return a - b; });
+    var creds = pts.map(function (p) { return p[1]; }).sort(function (a, b) { return a - b; });
+    var medD = durs.length ? durs[Math.floor(durs.length / 2)] : 0;
+    var medC = creds.length ? creds[Math.floor(creds.length / 2)] : 0;
+
+    var c = chart('scatter');
+    c.setOption({
+      backgroundColor: 'transparent',
+      grid: { left: 48, right: 18, top: 26, bottom: 34 },
+      tooltip: Object.assign({
+        trigger: 'item',
+        formatter: function (p) {
+          var d = p.data;
+          return esc(d[4]) + '<br/>' + esc(d[3]) + '<br/>耗时 ' + d[0] + ' s · ' + d[1] + ' 积分<br/>token ' + fmtTok(d[2]);
+        }
+      }, BASE_TEXT.tooltip),
+      xAxis: Object.assign({ type: 'value', name: '耗时（秒）', nameLocation: 'middle', nameGap: 22, nameTextStyle: { color: '#8494ad', fontSize: 10 } }, axisCommon()),
+      yAxis: Object.assign({ type: 'value', name: '积分', nameTextStyle: { color: '#8494ad', fontSize: 10 } }, axisCommon()),
+      series: [{
+        type: 'scatter',
+        data: pts,
+        symbolSize: function (v) { return Math.min(22, 4 + Math.sqrt(v[2] || 0) / 900); },
+        itemStyle: { color: 'rgba(79,140,255,.5)', borderColor: 'rgba(120,180,255,.85)', borderWidth: .5 },
+        emphasis: { itemStyle: { color: '#7fb2ff' } },
+        markLine: {
+          silent: true, symbol: 'none',
+          lineStyle: { color: 'rgba(245,158,11,.5)', type: 'dashed', width: 1 },
+          label: { color: '#f59e0b', fontSize: 10, formatter: '中位耗时' },
+          data: [{ xAxis: medD }]
+        },
+        markArea: {
+          silent: true,
+          itemStyle: { color: 'rgba(239,68,68,.07)' },
+          label: { color: 'rgba(239,68,68,.75)', fontSize: 10, position: 'insideTopRight', formatter: '又贵又慢' },
+          data: [[{ xAxis: medD, yAxis: medC }, { xAxis: 'max', yAxis: 'max' }]]
+        }
+      }]
+    }, true);
+  }
+
+  function renderROI(rows) {
+    var m = {};
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (!m[r.m]) m[r.m] = { c: 0, n: 0, out: 0, dur: 0, dn: 0 };
+      var o = m[r.m];
+      o.c += r.c || 0; o.n++; o.out += r.o || 0;
+      if (r.d != null) { o.dur += r.d; o.dn++; }
+    }
+    var list = Object.keys(m).map(function (k) {
+      var o = m[k];
+      return {
+        m: k, n: o.n, c: o.c,
+        reqPer100: o.c ? (o.n / o.c * 100) : 0,
+        outPer100: o.c ? (o.out / o.c * 100) : 0,
+        avgDur: o.dn ? o.dur / o.dn : null
+      };
+    }).filter(function (x) { return x.c > 0; })
+      .sort(function (a, b) { return b.reqPer100 - a.reqPer100; });
+
+    $('roi').innerHTML =
+      '<thead><tr><th>模型</th><th class="num">请求/100积分</th><th class="num">输出token/100积分</th><th class="num">均耗时</th></tr></thead><tbody>' +
+      list.map(function (x) {
+        return '<tr><td title="' + esc(x.m) + '">' + esc(x.m) + '</td>' +
+          '<td class="num">' + x.reqPer100.toFixed(1) + '</td>' +
+          '<td class="num">' + fmtTok(x.outPer100) + '</td>' +
+          '<td class="num">' + (x.avgDur == null ? '-' : (x.avgDur / 1000).toFixed(1) + 's') + '</td></tr>';
+      }).join('') +
+      '</tbody>';
+  }
+
+  function renderTable(rows) {
+    var list = rows.slice().sort(function (a, b) { return b.t - a.t; }).slice(0, 400);
+    $('tblHint').textContent = '最近 ' + list.length + ' 条 / 共 ' + rows.length + ' 条';
+    $('tbl').innerHTML =
+      '<thead><tr><th>时间</th><th>工作区</th><th>模型</th><th>场景</th><th class="num">耗时</th><th class="num">积分</th><th class="num">输入</th><th class="num">输出</th></tr></thead><tbody>' +
+      list.map(function (r) {
+        return '<tr>' +
+          '<td>' + fmtTime(r.t) + '</td>' +
+          '<td title="' + esc(r.p) + '">' + esc(r.p.length > 22 ? r.p.slice(0, 21) + '…' : r.p) + '</td>' +
+          '<td>' + esc(r.m) + '</td>' +
+          '<td><span class="tag ' + esc(r.s) + '">' + esc(r.s) + '</span></td>' +
+          '<td class="num">' + fmtDur(r.d) + '</td>' +
+          '<td class="num">' + (r.c || 0).toFixed(2) + '</td>' +
+          '<td class="num">' + fmtTok(r.i) + '</td>' +
+          '<td class="num">' + fmtTok(r.o) + '</td>' +
+          '</tr>';
+      }).join('') + '</tbody>';
+  }
+
+  // ---------------------------------------------------------------- 渲染
+
+  function renderAll() {
+    var rows = filtered();
+    renderKPI(rows);
+    renderCalendar(rows);
+    if (window.echarts) {
+      renderHour(rows);
+      renderScene(rows);
+      renderSankey(rows);
+      renderScatter(rows);
+    }
+    renderROI(rows);
+    renderTable(rows);
+  }
+
+  function updateRangeText(rows) {
+    if (!rows.length) { $('rangeText').textContent = '当前筛选无数据'; return; }
+    var a = rows[0].t, b = rows[rows.length - 1].t;
+    var cov = D.coverage || {};
+    $('rangeText').textContent =
+      dayKey(a) + ' ~ ' + dayKey(b) + ' · ' + rows.length + ' 次请求' +
+      (cov.durationRequests ? ' · 耗时覆盖 ' + pct(cov.durationRequests, D.total) : '');
+  }
+
+  // ---------------------------------------------------------------- 事件
+
+  $('segDays').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    Array.prototype.forEach.call(this.children, function (x) { x.classList.toggle('on', x === b); });
+    state.days = Number(b.dataset.days) || 0;
+    renderAll();
+  });
+  $('selModel').addEventListener('change', function () { state.model = this.value; renderAll(); });
+  $('selScene').addEventListener('change', function () { state.scene = this.value; renderAll(); });
+  $('selProject').addEventListener('change', function () { state.project = this.value; renderAll(); });
+  $('btnReset').addEventListener('click', function () {
+    state = { days: 0, model: '', scene: '', project: '' };
+    $('selModel').value = ''; $('selScene').value = ''; $('selProject').value = '';
+    Array.prototype.forEach.call($('segDays').children, function (x, i) { x.classList.toggle('on', i === 0); });
+    renderAll();
+  });
+
+  var rt;
+  window.addEventListener('resize', function () {
+    clearTimeout(rt);
+    rt = setTimeout(function () { Object.keys(charts).forEach(function (k) { charts[k].resize(); }); }, 160);
+  });
+
+  // ---------------------------------------------------------------- 启动
+
+  buildFilters();
+  updateRangeText(ROWS);
+  renderAll();
+
+  ensureECharts().then(function (ok) {
+    if (!ok) {
+      $('notice').innerHTML = '<div class="notice">图表库（ECharts）加载失败：当前网络访问不了 CDN。' +
+        '其余统计与明细仍可用；要离线看图，把 <code>echarts.min.js</code> 放到本目录并改一下引用即可。</div>';
+      return;
+    }
+    renderHour(filtered());
+    renderScene(filtered());
+    renderSankey(filtered());
+    renderScatter(filtered());
+  });
+
+  $('foot').innerHTML =
+    '<b>数据来源</b>：本机会话记录（<code>~/.workbuddy/projects/*.jsonl</code>）＋ 执行 trace（<code>~/.workbuddy/traces</code>）。' +
+    '积分来自每次请求的 usage.credit，耗时为 trace 中 generation span 的时长。<br>' +
+    '<b>口径说明</b>：' + (D.coverage ? ('共有 ' + D.coverage.durationRequests + ' 次请求能匹配到耗时（trace 仅保留约 11 天，更早的请求没有耗时）；') : '') +
+    '「场景」按该轮实际调用过的工具归类（编辑文件=Coding、跑命令=Debug、检索=Research、子任务=Agent、无工具=Chat），不是猜 prompt 关键词。<br>' +
+    '<b>已知缺口</b>：官方账单接口与本机日志都不记录请求 IP，因此没有地理归属地；「工作区」是本次可用的位置替代维度。' +
+    '数据由 <code>radar-collect.js</code> 于 ' + new Date(D.generatedAt).toLocaleString() + ' 生成。';
+})();
+</script>
+</body>
+</html>

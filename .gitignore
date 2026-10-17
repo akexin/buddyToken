@@ -4,6 +4,8 @@ token-usage-detail.csv
 token-usage-summary.md
 credit-history.json
 checkin-history.json
+# 全息轨迹数据：每次请求的模型/积分/项目/耗时，比聚合数据更细，同样不入库
+radar-data.js
 
 # 自动化开关配置（四个自动任务的开关状态，纯布尔偏好，不入库）
 auto-config.json
